@@ -1,12 +1,62 @@
 import SwiftUI
 import CoreBluetooth
 import Combine
-// MODIFICATION: Import the new Charts framework for data visualization.
-import Charts
-// MODIFICATION: Import the flutter-opendroneid library.
-import flutter_opendroneid
 
 // MARK: - Helper Extensions
+extension Data {
+    func toUInt16(at offset: Int) -> UInt16 {
+        let subdata = self.subdata(in: offset..<(offset+2))
+        return subdata.withUnsafeBytes { $0.load(as: UInt16.self) }
+    }
+    
+    func toInt32(at offset: Int) -> Int32 {
+        let subdata = self.subdata(in: offset..<(offset+4))
+        return subdata.withUnsafeBytes { $0.load(as: Int32.self) }
+    }
+    
+    func toFloat16(at offset: Int) -> Float {
+        let uint16 = self.toUInt16(at: offset)
+        
+        let sign = (uint16 & 0x8000) >> 15
+        let exponent = (uint16 & 0x7C00) >> 10
+        let fraction = uint16 & 0x03FF
+        
+        let floatSign: UInt32 = UInt32(sign) << 31
+        var floatExponent: UInt32
+        var floatFraction: UInt32
+
+        if exponent == 0 {
+            if fraction == 0 {
+                floatExponent = 0
+                floatFraction = 0
+            } else {
+                var exponentInt = -14
+                var frac = fraction
+                while (frac & 0x0400) == 0 {
+                    frac <<= 1
+                    exponentInt -= 1
+                }
+                floatExponent = UInt32(exponentInt + 127) << 23
+                floatFraction = UInt32(frac & ~0x0400) << 13
+            }
+        } else if exponent == 0x1F {
+            if fraction == 0 {
+                floatExponent = 0xFF << 23
+                floatFraction = 0
+            } else {
+                floatExponent = 0xFF << 23
+                floatFraction = UInt32(fraction) << 13
+            }
+        } else {
+            floatExponent = UInt32(Int(exponent) - 15 + 127) << 23
+            floatFraction = UInt32(fraction) << 13
+        }
+
+        let floatBits = floatSign | floatExponent | floatFraction
+        return Float(bitPattern: floatBits)
+    }
+}
+
 extension Binding {
     init(_ source: Binding<Value?>, replacingNilWith nilValue: Value) {
         self.init(
@@ -56,9 +106,7 @@ struct LoggedRemoteID: Identifiable, Codable, Hashable {
     }
 }
 
-struct TelemetryRecord: Identifiable, Codable, Hashable {
-    // MODIFICATION: Add identifiable conformance for use in Chart ForEach
-    var id: Date { timestamp }
+struct TelemetryRecord: Codable, Hashable {
     let timestamp: Date
     let location: ODIDLocation
     let rssi: Int
@@ -86,8 +134,6 @@ struct MetarReport: Codable {
     let rawOb: String
 }
 
-// MODIFICATION: These structs are now Codable and Hashable to be used in the app's data models.
-// The properties are also adapted to be compatible with the flutter_opendroneid library's data structures.
 struct ODIDBasicID: Codable, Hashable {
     var idType: String
     var uasID: String
@@ -113,100 +159,153 @@ class RemoteIDDevice: ObservableObject, Identifiable {
     @Published var basicID: ODIDBasicID?
     @Published var location: ODIDLocation?
 
-    init(from aircraft: Aircraft) {
-        self.id = UUID(uuidString: aircraft.macAddress) ?? UUID()
-        self.name = aircraft.macAddress // Or any other identifier from `aircraft`
-        self.rssi = NSNumber(value: aircraft.rssi)
+    init(from peripheral: CBPeripheral, rssi: NSNumber) {
+        self.id = peripheral.identifier
+        self.name = peripheral.name ?? "Drone \(String(peripheral.identifier.uuidString.prefix(4)))"
+        self.rssi = rssi
+    }
+    
+    func update(with advertisementData: [String: Any], rssi: NSNumber) {
+        DispatchQueue.main.async {
+            self.rssi = rssi
+            guard let serviceData = advertisementData[CBAdvertisementDataServiceDataKey] as? [CBUUID: Data],
+                  let remoteIDData = serviceData.first?.value else {
+                return
+            }
+            
+            self.parseODIDMessagePack(data: remoteIDData)
+        }
+    }
+
+    private func parseODIDMessagePack(data: Data) {
+        guard data.count > 2 else { return }
+        var currentIndex = 2
+
+        while currentIndex < data.count {
+            guard currentIndex < data.count else { break }
+
+            let messageHeader = data[currentIndex]
+            let messageType = Int(messageHeader >> 4)
+            let messageLength = 25
+
+            guard currentIndex + messageLength <= data.count else {
+                break
+            }
+
+            let messageData = data.subdata(in: currentIndex ..< (currentIndex + messageLength))
+
+            switch messageType {
+            case 0:
+                if let newBasicID = self.parseBasicID(message: messageData) {
+                    if newBasicID.idType == "FAA Registration ID" {
+                        self.basicID = newBasicID
+                    }
+                }
+            case 1:
+                if let newLocation = self.parseLocation(message: messageData) {
+                    self.location = newLocation
+                }
+            default:
+                break
+            }
+            
+            currentIndex += messageLength
+        }
+    }
+
+    private func parseBasicID(message: Data) -> ODIDBasicID? {
+        guard message.count == 25 else { return nil }
+
+        let idTypeValue = message[1]
+        var idType: String
         
-        if let basicIdData = aircraft.basicId {
-            self.basicID = ODIDBasicID(
-                idType: basicIdData.uasId.type.toString(),
-                uasID: String(bytes: basicIdData.uasId.id, encoding: .utf8) ?? ""
-            )
+        switch idTypeValue {
+        case 0x12:
+            idType = "Serial Number"
+        case 0x22:
+            idType = "FAA Registration ID"
+        default:
+            return nil
+        }
+
+        let uasIDBytes = message.subdata(in: 2..<22)
+        let uasID = String(data: uasIDBytes, encoding: .ascii)?
+            .trimmingCharacters(in: .controlCharacters)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\0", with: "") ?? "Invalid String"
+
+        if uasID.isEmpty {
+            return nil
         }
         
-        if let locationData = aircraft.location {
-            self.location = ODIDLocation(
-                status: locationData.status.toString(),
-                direction: locationData.direction?.doubleValue ?? 0.0,
-                speedHorizontal: locationData.speedHorizontal?.doubleValue ?? 0.0,
-                speedVertical: locationData.speedVertical?.doubleValue ?? 0.0,
-                latitude: locationData.latitude?.doubleValue ?? 0.0,
-                longitude: locationData.longitude?.doubleValue ?? 0.0,
-                altitudeGeodetic: locationData.altitudeGeo?.doubleValue ?? 0.0,
-                height: locationData.height?.doubleValue,
-                heightType: locationData.heightType.toString()
-            )
-        }
+        return ODIDBasicID(idType: idType, uasID: uasID)
+    }
+
+    private func parseLocation(message: Data) -> ODIDLocation? {
+        guard message.count >= 21 else { return nil }
+        
+        let status = "Airborne"
+        let direction = Double(message.toUInt16(at: 2)) * 0.01
+        let speedHorizontal = Double(message.toUInt16(at: 4)) * 0.25
+        let speedVertical = Double(message[6]) * 0.5
+        let latitude = Double(message.toInt32(at: 8)) / 1e7
+        let longitude = Double(message.toInt32(at: 12)) / 1e7
+        let altitudeGeodetic = Double(message.toFloat16(at: 16)) * 0.5 - 1000
+        let height = Double(message.toFloat16(at: 18)) * 0.5 - 1000
+        let heightType = message[1] & 0x01 == 1 ? "Above Ground" : "Above Takeoff"
+        
+        return ODIDLocation(status: status, direction: direction, speedHorizontal: speedHorizontal, speedVertical: speedVertical, latitude: latitude, longitude: longitude, altitudeGeodetic: altitudeGeodetic, height: height, heightType: heightType)
     }
 }
 
 // MARK: - Managers
 
-// MODIFICATION: This new manager class will handle all the logic related to the flutter-opendroneid library.
-class OpenDroneIDManager: NSObject, ObservableObject {
+class BluetoothScanner: NSObject, ObservableObject, CBCentralManagerDelegate {
     @Published var discoveredDevices: [RemoteIDDevice] = []
     @Published var isScanning = false
+    private var centralManager: CBCentralManager!
     
-    private let openDroneIdPlugin = SwiftFlutterOpendroneidPlugin()
-    private var aircraftStreamHandler: AircraftStreamHandler?
-
     override init() {
         super.init()
-        aircraftStreamHandler = AircraftStreamHandler { [weak self] aircraft in
-            self?.handleAircraftUpdate(aircraft)
-        }
-        openDroneIdPlugin.setAircraftStreamHandler(handler: aircraftStreamHandler!)
+        centralManager = CBCentralManager(delegate: self, queue: nil)
     }
     
     func startScanning() {
-        openDroneIdPlugin.startScan()
         isScanning = true
+        let remoteIDServiceUUID = CBUUID(string: "0000FFFA-0000-1000-8000-00805F9B34FB")
+        centralManager.scanForPeripherals(withServices: [remoteIDServiceUUID], options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
     }
     
     func stopScanning() {
-        openDroneIdPlugin.stopScan()
         isScanning = false
+        centralManager.stopScan()
     }
     
-    private func handleAircraftUpdate(_ aircraft: Aircraft) {
+    func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        if central.state == .poweredOn {
+            startScanning()
+        } else {
+            isScanning = false
+            print("Bluetooth is not available.")
+        }
+    }
+    
+    func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String : Any], rssi RSSI: NSNumber) {
         DispatchQueue.main.async {
-            let newDevice = RemoteIDDevice(from: aircraft)
-            if let index = self.discoveredDevices.firstIndex(where: { $0.id == newDevice.id }) {
-                self.discoveredDevices[index] = newDevice
+            if let index = self.discoveredDevices.firstIndex(where: { $0.id == peripheral.identifier }) {
+                self.discoveredDevices[index].update(with: advertisementData, rssi: RSSI)
             } else {
+                let newDevice = RemoteIDDevice(from: peripheral, rssi: RSSI)
+                newDevice.update(with: advertisementData, rssi: RSSI)
                 self.discoveredDevices.append(newDevice)
             }
         }
     }
 }
 
-class AircraftStreamHandler: NSObject, FlutterStreamHandler {
-    private let onAircraftReceived: (Aircraft) -> Void
-    
-    init(onAircraftReceived: @escaping (Aircraft) -> Void) {
-        self.onAircraftReceived = onAircraftReceived
-    }
-    
-    public func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
-        // Not used in this implementation
-        return nil
-    }
-    
-    public func onCancel(withArguments arguments: Any?) -> FlutterError? {
-        // Not used in this implementation
-        return nil
-    }
-    
-    func onAircraftUpdate(_ aircraft: Aircraft) {
-        onAircraftReceived(aircraft)
-    }
-}
-
 // MARK: - ViewModels
 class AppViewModel: ObservableObject {
-    // MODIFICATION: The BluetoothScanner is replaced with the OpenDroneIDManager.
-    @Published var openDroneIDManager = OpenDroneIDManager()
+    @Published var bluetoothScanner = BluetoothScanner()
 
     @Published var flightLogs: [FlightLog] = []
     @Published var isLoggingFlight = false
@@ -224,10 +323,10 @@ class AppViewModel: ObservableObject {
     
     private var cancellables = Set<AnyCancellable>()
     
-    private let logbookStorageKey = "Part107Logbook_Logs_v10"
-    private let droneStorageKey = "Part107Logbook_Drones_v10"
-    private let certificateDateKey = "Part107Logbook_CertDate_v10"
-    private let recurrencyDateKey = "Part107Logbook_RecurrencyDate_v10"
+    private let logbookStorageKey = "Part107Logbook_Logs_v9"
+    private let droneStorageKey = "Part107Logbook_Drones_v9"
+    private let certificateDateKey = "Part107Logbook_CertDate_v9"
+    private let recurrencyDateKey = "Part107Logbook_RecurrencyDate_v9"
 
     init() {
         self.initialCertificateDate = UserDefaults.standard.object(forKey: certificateDateKey) as? Date ?? Date()
@@ -235,7 +334,7 @@ class AppViewModel: ObservableObject {
         loadLogs()
         loadDrones()
         
-        openDroneIDManager.objectWillChange
+        bluetoothScanner.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
     }
@@ -246,7 +345,7 @@ class AppViewModel: ObservableObject {
         if let firstDrone = drones.first {
             activeLog.aircraftID = firstDrone.id
         }
-        openDroneIDManager.startScanning()
+        bluetoothScanner.startScanning()
         isLoggingFlight = true
         startTimer()
     }
@@ -261,29 +360,39 @@ class AppViewModel: ObservableObject {
         }
     }
     
-    // MODIFICATION: The recordTelemetrySnapshot function is updated to use the data from the OpenDroneIDManager.
     func recordTelemetrySnapshot() {
         let timestamp = Date()
         var updatedLoggedIDs = activeLog.loggedRemoteIDs ?? []
 
-        for device in openDroneIDManager.discoveredDevices {
+        // Iterate through all devices the scanner currently sees.
+        for device in bluetoothScanner.discoveredDevices {
+            // Check if we are already logging this device.
             if let index = updatedLoggedIDs.firstIndex(where: { $0.id == device.id }) {
+                // --- UPDATE EXISTING DEVICE ---
+                // We are already logging it, so let's update its data.
+                
+                // Update the Basic ID if it's available.
                 if let basicID = device.basicID {
                     updatedLoggedIDs[index].basicID = basicID
                 }
                 
+                // If location data is available, add a new telemetry point.
                 if let location = device.location {
                     let newRecord = TelemetryRecord(timestamp: timestamp, location: location, rssi: device.rssi.intValue)
                     updatedLoggedIDs[index].telemetry.append(newRecord)
                 }
                 
             } else {
+                // --- ADD NEW DEVICE ---
+                // This is a new device. Add it to our log for the first time.
+                // It's okay if its basicID or location is nil for now; they will be updated later.
                 var newLoggedID = LoggedRemoteID(
                     id: device.id,
                     basicID: device.basicID,
-                    telemetry: []
+                    telemetry: [] // Start with an empty telemetry log.
                 )
                 
+                // If location is available on this first sighting, add the first telemetry point.
                 if let location = device.location {
                     let newRecord = TelemetryRecord(timestamp: timestamp, location: location, rssi: device.rssi.intValue)
                     newLoggedID.telemetry.append(newRecord)
@@ -293,6 +402,7 @@ class AppViewModel: ObservableObject {
             }
         }
 
+        // Only assign the array back if it has actually changed.
         if updatedLoggedIDs != activeLog.loggedRemoteIDs {
             activeLog.loggedRemoteIDs = updatedLoggedIDs
         }
@@ -306,7 +416,7 @@ class AppViewModel: ObservableObject {
         telemetryTimer = nil
         
         isLoggingFlight = false
-        openDroneIDManager.stopScanning()
+        bluetoothScanner.stopScanning()
         saveLog(activeLog)
     }
 
@@ -571,85 +681,18 @@ struct FlightLogListView: View {
     }
 }
 
-// MODIFICATION: This view is enhanced with charts and first/last seen times.
 struct LoggedIDDetailView: View {
     let loggedID: LoggedRemoteID
 
-    private var timeFormatter: DateFormatter {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .medium
-        formatter.dateStyle = .none
-        return formatter
-    }
-
     var body: some View {
         Form {
-            Section("Summary") {
+            Section("Identification") {
                 InfoRow(label: "Registration / Serial Number", value: loggedID.basicID?.uasID ?? "N/A")
                 InfoRow(label: "ID Type", value: loggedID.basicID?.idType ?? "N/A")
-                if let firstSeen = loggedID.telemetry.first?.timestamp {
-                    InfoRow(label: "First Seen", value: timeFormatter.string(from: firstSeen))
-                }
-                if let lastSeen = loggedID.telemetry.last?.timestamp {
-                    InfoRow(label: "Last Seen", value: timeFormatter.string(from: lastSeen))
-                }
-            }
-
-            if !loggedID.telemetry.isEmpty {
-                Section("Telemetry Charts") {
-                    DisclosureGroup("Signal Strength (RSSI)") {
-                        Chart(loggedID.telemetry) {
-                            LineMark(
-                                x: .value("Time", $0.timestamp),
-                                y: .value("RSSI", $0.rssi)
-                            )
-                            .foregroundStyle(.blue)
-                            .interpolationMethod(.catmullRom)
-                            
-                            AreaMark(
-                                x: .value("Time", $0.timestamp),
-                                y: .value("RSSI", $0.rssi)
-                            )
-                            .interpolationMethod(.catmullRom)
-                            .foregroundStyle(LinearGradient(colors: [.blue.opacity(0.4), .clear], startPoint: .top, endPoint: .bottom))
-                        }
-                        .chartYAxisLabel("dBm")
-                        .frame(height: 150)
-                        .padding(.top)
-                    }
-                    
-                    DisclosureGroup("Altitude (AGL)") {
-                        Chart(loggedID.telemetry) {
-                            LineMark(
-                                x: .value("Time", $0.timestamp),
-                                y: .value("Altitude", $0.location.height ?? 0)
-                            )
-                            .foregroundStyle(.green)
-                            .interpolationMethod(.catmullRom)
-                        }
-                        .chartYAxisLabel("Meters")
-                        .frame(height: 150)
-                        .padding(.top)
-                    }
-                    
-                    DisclosureGroup("Ground Speed") {
-                        Chart(loggedID.telemetry) {
-                            LineMark(
-                                x: .value("Time", $0.timestamp),
-                                y: .value("Speed", $0.location.speedHorizontal)
-                            )
-                            .foregroundStyle(.orange)
-                            .interpolationMethod(.catmullRom)
-                        }
-                        .chartYAxisLabel("m/s")
-                        .frame(height: 150)
-                        .padding(.top)
-                    }
-                }
             }
             
             Section("Full Telemetry Log (\(loggedID.telemetry.count) records)") {
-                List(loggedID.telemetry) { record in
+                List(loggedID.telemetry, id: \.self) { record in
                     TelemetryRow(record: record)
                 }
             }
@@ -658,7 +701,6 @@ struct LoggedIDDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 }
-
 
 struct FlightLoggingView: View {
     @EnvironmentObject var viewModel: AppViewModel
@@ -757,7 +799,7 @@ struct FlightLoggingView: View {
             .navigationTitle("New Flight")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") {
-                    viewModel.openDroneIDManager.stopScanning()
+                    viewModel.bluetoothScanner.stopScanning()
                     viewModel.isLoggingFlight = false
                 } }
                 ToolbarItem(placement: .confirmationAction) { Button("Save & End Flight", action: viewModel.stopLogging) }
@@ -798,14 +840,18 @@ struct FlightDetailView: View {
             if let rids = log.loggedRemoteIDs, !rids.isEmpty {
                 Section("Detected Remote ID Telemetry") {
                     ForEach(rids) { rid in
-                        NavigationLink(destination: LoggedIDDetailView(loggedID: rid)) {
-                            VStack(alignment: .leading, spacing: 4) {
+                        DisclosureGroup {
+                            ForEach(rid.telemetry, id: \.self) { record in
+                                TelemetryRow(record: record)
+                                    .padding(.vertical, 4)
+                            }
+                        } label: {
+                            VStack(alignment: .leading) {
                                 Text(rid.basicID?.uasID ?? "ID Unavailable").bold()
                                 Text("Telemetry Points: \(rid.telemetry.count)")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
-                            .padding(.vertical, 4)
                         }
                     }
                 }
@@ -978,27 +1024,26 @@ struct DroneDetailView: View {
 
 
 // MARK: Scanner Views
-// MODIFICATION: The RemoteIDScannerView is updated to use the OpenDroneIDManager.
 struct RemoteIDScannerView: View {
     @EnvironmentObject var viewModel: AppViewModel
     @State private var selectedDevice: RemoteIDDevice?
 
     var body: some View {
         Group {
-            if viewModel.openDroneIDManager.isScanning && viewModel.openDroneIDManager.discoveredDevices.isEmpty {
+            if viewModel.bluetoothScanner.isScanning && viewModel.bluetoothScanner.discoveredDevices.isEmpty {
                 VStack(spacing: 20) {
                     ProgressView()
                     Text("Scanning for Drones...")
                         .foregroundStyle(.secondary)
                 }
-            } else if viewModel.openDroneIDManager.discoveredDevices.isEmpty {
+            } else if viewModel.bluetoothScanner.discoveredDevices.isEmpty {
                 ContentUnavailableView {
                     Label("No Drones Found", systemImage: "antenna.radiowaves.left.and.right.slash")
                 } description: {
                     Text("No Remote ID signals detected. Ensure your drone is powered on and broadcasting.")
                 }
             } else {
-                List(viewModel.openDroneIDManager.discoveredDevices) { device in
+                List(viewModel.bluetoothScanner.discoveredDevices) { device in
                     Button(action: { selectedDevice = device }) {
                         HStack {
                             Image(systemName: "antenna.radiowaves.left.and.right.circle")
@@ -1021,9 +1066,9 @@ struct RemoteIDScannerView: View {
         }
         .navigationTitle("Remote ID Scanner")
         .onAppear {
-              viewModel.openDroneIDManager.startScanning()
+              viewModel.bluetoothScanner.startScanning()
         }
-        .onDisappear(perform: viewModel.openDroneIDManager.stopScanning)
+        .onDisappear(perform: viewModel.bluetoothScanner.stopScanning)
         .sheet(item: $selectedDevice) { device in
             RemoteIDDetailView(device: device)
         }
