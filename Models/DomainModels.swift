@@ -74,12 +74,14 @@ struct FlightLog: Identifiable, Codable {
     var loggedRemoteIDs: [LoggedRemoteID]
     var completedChecklist: [CompletedChecklistItem]
     var segments: [FlightSegment]
+    var trashedDate: Date? // <-- ADDED: To mark a log as in the trash
 
     var flightDuration: TimeInterval {
         segments.reduce(0) { $0 + $1.duration }
     }
 
-    init(id: UUID = UUID(), date: Date = Date(), aircraftID: UUID? = nil, location: String = "", pilotInCommand: String = "", missionNotes: String = "", weather: WeatherData = WeatherData(), pmtcBy: String? = nil, visualObserver: String? = nil, loggedRemoteIDs: [LoggedRemoteID] = [], completedChecklist: [CompletedChecklistItem] = [], segments: [FlightSegment] = []) {
+    // <-- ADDED: New initializer to accommodate the new property
+    init(id: UUID = UUID(), date: Date = Date(), aircraftID: UUID? = nil, location: String = "", pilotInCommand: String = "", missionNotes: String = "", weather: WeatherData = WeatherData(), pmtcBy: String? = nil, visualObserver: String? = nil, loggedRemoteIDs: [LoggedRemoteID] = [], completedChecklist: [CompletedChecklistItem] = [], segments: [FlightSegment] = [], trashedDate: Date? = nil) {
         self.id = id
         self.date = date
         self.aircraftID = aircraftID
@@ -92,6 +94,7 @@ struct FlightLog: Identifiable, Codable {
         self.loggedRemoteIDs = loggedRemoteIDs
         self.completedChecklist = completedChecklist
         self.segments = segments
+        self.trashedDate = trashedDate
     }
 }
 

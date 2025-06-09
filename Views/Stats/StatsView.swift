@@ -17,7 +17,10 @@ struct StatsView: View {
 
             Section("Pilot Settings") {
                 TextField("Pilot Name", text: $viewModel.userSettings.pilotName)
-                    .onChange(of: viewModel.userSettings.pilotName) { _ in viewModel.saveUserSettings() }
+                    // <-- FIXED: Updated to modern onChange syntax.
+                    .onChange(of: viewModel.userSettings.pilotName) {
+                        viewModel.saveUserSettings()
+                    }
                 
                 Picker("Pilot Type", selection: $viewModel.userSettings.pilotType) {
                     ForEach(PilotType.allCases) { type in
@@ -25,7 +28,10 @@ struct StatsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                .onChange(of: viewModel.userSettings.pilotType) { _ in viewModel.saveUserSettings() }
+                // <-- FIXED: Updated to modern onChange syntax.
+                .onChange(of: viewModel.userSettings.pilotType) {
+                    viewModel.saveUserSettings()
+                }
             }
 
             if viewModel.userSettings.pilotType == .part107 {
@@ -45,7 +51,10 @@ struct StatsView: View {
                     selection: $viewModel.userSettings.part107InitialCertificateDate,
                     displayedComponents: .date
                 )
-                .onChange(of: viewModel.userSettings.part107InitialCertificateDate) { _ in viewModel.saveUserSettings() }
+                // <-- FIXED: Updated to modern onChange syntax.
+                .onChange(of: viewModel.userSettings.part107InitialCertificateDate) {
+                    viewModel.saveUserSettings()
+                }
                 InfoRow(label: "Status", value: "Certificate does not expire.")
             }
 
@@ -55,7 +64,10 @@ struct StatsView: View {
                     selection: $viewModel.userSettings.part107LastRecurrencyDate,
                     displayedComponents: .date
                 )
-                .onChange(of: viewModel.userSettings.part107LastRecurrencyDate) { _ in viewModel.saveUserSettings() }
+                // <-- FIXED: Updated to modern onChange syntax.
+                .onChange(of: viewModel.userSettings.part107LastRecurrencyDate) {
+                    viewModel.saveUserSettings()
+                }
                 
                 if let expirationDate = viewModel.recurrencyExpirationDate, let daysRemaining = viewModel.daysUntilRecurrencyExpires {
                     InfoRow(label: "Training Expires On", value: expirationDate.formatted(date: .long, time: .omitted))
@@ -83,7 +95,10 @@ struct StatsView: View {
                 selection: $viewModel.userSettings.recreationalTRUSTDate,
                 displayedComponents: .date
             )
-            .onChange(of: viewModel.userSettings.recreationalTRUSTDate) { _ in viewModel.saveUserSettings() }
+            // <-- FIXED: Updated to modern onChange syntax.
+            .onChange(of: viewModel.userSettings.recreationalTRUSTDate) {
+                viewModel.saveUserSettings()
+            }
             InfoRow(label: "Status", value: "The Recreational UAS Safety Test (TRUST) does not expire.")
         }
     }

@@ -6,11 +6,11 @@ struct FlightLogListView: View {
 
     var body: some View {
         Group {
-            if viewModel.flightLogs.isEmpty {
+            if viewModel.activeFlightLogs.isEmpty {
                 ContentUnavailableView("No Flights Logged", systemImage: "airplane.departure", description: Text("Tap the + button to add your first flight log."))
             } else {
                 List {
-                    ForEach(viewModel.flightLogs) { log in
+                    ForEach(viewModel.activeFlightLogs) { log in
                         NavigationLink(destination: FlightDetailView(log: log)) {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text(viewModel.droneForID(log.aircraftID)?.displayName ?? "Unknown Aircraft")
@@ -31,17 +31,24 @@ struct FlightLogListView: View {
                             .padding(.vertical, 8)
                         }
                     }
-                    .onDelete(perform: viewModel.deleteLog)
+                    .onDelete(perform: viewModel.moveLogToTrash)
                 }
             }
         }
         .navigationTitle("Flight Logbook")
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button(action: viewModel.startNewLog) {
-                    Image(systemName: "plus.circle.fill").font(.title)
+            // <-- FIXED: Wrapping the buttons in an HStack and ToolbarItemGroup resolves the inference error.
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                HStack {
+                    NavigationLink(destination: TrashView()) {
+                        Image(systemName: "trash")
+                    }
+                    
+                    Button(action: viewModel.startNewLog) {
+                        Image(systemName: "plus.circle.fill").font(.title)
+                    }
+                    .disabled(viewModel.drones.isEmpty)
                 }
-                .disabled(viewModel.drones.isEmpty)
             }
         }
         .sheet(isPresented: $viewModel.isLoggingFlight) {
@@ -49,6 +56,67 @@ struct FlightLogListView: View {
         }
     }
 }
+
+/// A new view to display and manage trashed flight logs.
+struct TrashView: View {
+    @EnvironmentObject var viewModel: AppViewModel
+
+    var body: some View {
+        Group {
+            if viewModel.trashedFlightLogs.isEmpty {
+                ContentUnavailableView(
+                    "Trash is Empty",
+                    systemImage: "trash.slash.fill",
+                    description: Text("Discarded flights will appear here. Items are automatically deleted after 30 days.")
+                )
+            } else {
+                List {
+                    ForEach(viewModel.trashedFlightLogs) { log in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(viewModel.droneForID(log.aircraftID)?.displayName ?? "Unknown Aircraft")
+                                .font(.headline)
+                            Text(log.location)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            if let trashedDate = log.trashedDate {
+                                Text("Discarded: \(trashedDate.formatted(date: .abbreviated, time: .shortened))")
+                                    .font(.caption)
+                                    .foregroundColor(.red)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                withAnimation {
+                                    if let index = viewModel.trashedFlightLogs.firstIndex(where: { $0.id == log.id }) {
+                                        viewModel.restoreLogFromTrash(at: IndexSet(integer: index))
+                                    }
+                                }
+                            } label: {
+                                Label("Restore", systemImage: "arrow.uturn.backward.circle.fill")
+                            }
+                            .tint(.blue)
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                withAnimation {
+                                    if let index = viewModel.trashedFlightLogs.firstIndex(where: { $0.id == log.id }) {
+                                        viewModel.deleteLogPermanently(at: IndexSet(integer: index))
+                                    }
+                                }
+                            } label: {
+                                Label("Delete", systemImage: "xmark.bin.fill")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Trash")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 
 /// A detailed, read-only view of a completed flight log.
 struct FlightDetailView: View {

@@ -32,6 +32,9 @@ class AppViewModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
+            
+        // Clean up stale items from the trash on app launch.
+        purgeStaleTrashedLogs()
     }
 
     // MARK: - Setup Flow
@@ -70,6 +73,10 @@ class AppViewModel: ObservableObject {
     func discardActiveLog() {
         if isSegmentActive { endCurrentSegment() }
         stopTelemetryTimer()
+        
+        activeLog.trashedDate = Date()
+        saveLog(activeLog) // Save the trashed log
+        
         isLoggingFlight = false
         bluetoothScanner.stopScanning()
     }
@@ -94,6 +101,38 @@ class AppViewModel: ObservableObject {
     }
 
     // MARK: - Data Persistence (CRUD Operations)
+    
+    func moveLogToTrash(at offsets: IndexSet) {
+        let activeLogs = self.activeFlightLogs
+        let logsToMove = offsets.map { activeLogs[$0] }
+        
+        for log in logsToMove {
+            if let index = self.flightLogs.firstIndex(where: { $0.id == log.id }) {
+                self.flightLogs[index].trashedDate = Date()
+            }
+        }
+        saveLogs()
+    }
+    
+    func restoreLogFromTrash(at offsets: IndexSet) {
+        let trashed = self.trashedFlightLogs
+        let logsToRestore = offsets.map { trashed[$0] }
+        
+        for log in logsToRestore {
+            if let index = self.flightLogs.firstIndex(where: { $0.id == log.id }) {
+                self.flightLogs[index].trashedDate = nil
+            }
+        }
+        saveLogs()
+    }
+    
+    func deleteLogPermanently(at offsets: IndexSet) {
+        let trashed = self.trashedFlightLogs
+        let idsToDelete = offsets.map { trashed[$0].id }
+        self.flightLogs.removeAll { idsToDelete.contains($0.id) }
+        saveLogs()
+    }
+
     func saveDrone(drone: Drone) {
         if let index = drones.firstIndex(where: { $0.id == drone.id }) {
             drones[index] = drone
@@ -110,11 +149,6 @@ class AppViewModel: ObservableObject {
             checklists.append(checklist)
         }
         saveChecklists()
-    }
-    
-    func deleteLog(at offsets: IndexSet) {
-        flightLogs.remove(atOffsets: offsets)
-        saveLogs()
     }
     
     func deleteDrone(at offsets: IndexSet) {
@@ -155,8 +189,17 @@ class AppViewModel: ObservableObject {
     }
     
     // MARK: - Computed Properties & Helpers
+    
+    var activeFlightLogs: [FlightLog] {
+        flightLogs.filter { $0.trashedDate == nil }
+    }
+    
+    var trashedFlightLogs: [FlightLog] {
+        flightLogs.filter { $0.trashedDate != nil }.sorted { $0.trashedDate! > $1.trashedDate! }
+    }
+    
     var totalFlightTime: TimeInterval {
-        flightLogs.reduce(0) { $0 + $1.flightDuration }
+        activeFlightLogs.reduce(0) { $0 + $1.flightDuration }
     }
     
     var recurrencyExpirationDate: Date? {
@@ -175,10 +218,29 @@ class AppViewModel: ObservableObject {
     }
     
     // MARK: - Private Methods
+    
+    private func purgeStaleTrashedLogs() {
+        let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: Date())!
+        let originalCount = self.flightLogs.count
+        
+        self.flightLogs.removeAll { log in
+            guard let trashedDate = log.trashedDate else { return false }
+            return trashedDate < thirtyDaysAgo
+        }
+        
+        if self.flightLogs.count != originalCount {
+            AppLogger.persistence.info("Purged \(originalCount - self.flightLogs.count) stale log(s) from trash.")
+            saveLogs()
+        }
+    }
+
     private func startTelemetryTimer() {
         telemetryTimer?.invalidate()
+        // <-- FIXED: This closure now correctly dispatches its work to the main actor.
         telemetryTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.recordTelemetrySnapshot()
+            Task { @MainActor [weak self] in
+                self?.recordTelemetrySnapshot()
+            }
         }
     }
     
@@ -207,10 +269,10 @@ class AppViewModel: ObservableObject {
     }
     
     private func saveLog(_ log: FlightLog) {
-        if let index = flightLogs.firstIndex(where: { $0.id == log.id }) {
-            flightLogs[index] = log
+        if let index = self.flightLogs.firstIndex(where: { $0.id == log.id }) {
+            self.flightLogs[index] = log
         } else {
-            flightLogs.insert(log, at: 0)
+            self.flightLogs.insert(log, at: 0)
         }
         saveLogs()
     }
@@ -221,7 +283,7 @@ class AppViewModel: ObservableObject {
         checklists = Self.loadData(from: Constants.UserDefaultsKeys.checklistStorage) ?? []
     }
     
-    private func saveLogs() { Self.saveData(flightLogs, to: Constants.UserDefaultsKeys.logbookStorage) }
+    private func saveLogs() { Self.saveData(self.flightLogs.sorted(by: { $0.date > $1.date }), to: Constants.UserDefaultsKeys.logbookStorage) }
     private func saveDrones() { Self.saveData(drones, to: Constants.UserDefaultsKeys.droneStorage) }
     private func saveChecklists() { Self.saveData(checklists, to: Constants.UserDefaultsKeys.checklistStorage) }
     func saveUserSettings() { Self.saveData(userSettings, to: Constants.UserDefaultsKeys.userSettings) }
@@ -256,4 +318,3 @@ class AppViewModel: ObservableObject {
         return decodedParts.joined(separator: "\n")
     }
 }
-

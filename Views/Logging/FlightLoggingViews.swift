@@ -84,8 +84,9 @@ private struct PreFlightSetupView: View {
                     Text("None").tag(nil as UUID?)
                     ForEach(viewModel.checklists) { Text($0.name).tag($0.id as UUID?) }
                 }
-                .onChange(of: selectedChecklistID) { newID in
-                    updateCompletedChecklist(for: newID)
+                // <-- FIXED: Updated to modern onChange syntax.
+                .onChange(of: selectedChecklistID) {
+                    updateCompletedChecklist(for: selectedChecklistID)
                 }
                 
                 ForEach($viewModel.activeLog.completedChecklist) { $item in
@@ -215,8 +216,6 @@ private struct InFlightLoggingView: View {
     
     private var remoteIDSection: some View {
         Section("Detected Remote IDs") {
-            // ** FIXED ERROR HERE **
-            // The property is no longer optional. Check if the array is empty instead of using optional binding.
             if !viewModel.activeLog.loggedRemoteIDs.isEmpty {
                 ForEach(viewModel.activeLog.loggedRemoteIDs) { rid in
                     NavigationLink(destination: LoggedIDDetailView(loggedID: rid)) {
