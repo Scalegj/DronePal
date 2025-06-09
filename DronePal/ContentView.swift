@@ -68,6 +68,22 @@ extension Binding {
 
 // MARK: - Models
 
+enum PilotType: String, Codable, CaseIterable, Identifiable {
+    case part107 = "Part 107"
+    case recreational = "Recreational"
+    
+    var id: String { self.rawValue }
+}
+
+struct UserSettings: Codable {
+    var pilotName: String = ""
+    var pilotType: PilotType = .part107
+    var part107InitialCertificateDate: Date = Date()
+    var part107LastRecurrencyDate: Date = Date()
+    var recreationalTRUSTDate: Date = Date()
+}
+
+
 struct FlightSegment: Identifiable, Codable, Hashable {
     let id: UUID
     var startTime: Date
@@ -77,7 +93,6 @@ struct FlightSegment: Identifiable, Codable, Hashable {
         if let endTime = endTime {
             return endTime.timeIntervalSince(startTime)
         } else {
-            // If the segment is active, calculate duration to now
             return Date().timeIntervalSince(startTime)
         }
     }
@@ -95,7 +110,7 @@ struct ChecklistItem: Identifiable, Codable, Hashable {
 }
 
 struct CompletedChecklistItem: Identifiable, Codable, Hashable {
-    let id: UUID // Corresponds to ChecklistItem's ID
+    let id: UUID
     var text: String
     var isChecked: Bool
     var completionDate: Date?
@@ -136,7 +151,7 @@ struct FlightLog: Identifiable, Codable {
 }
 
 struct LoggedRemoteID: Identifiable, Codable, Hashable {
-    let id: UUID // Peripheral identifier
+    let id: UUID
     var basicID: ODIDBasicID?
     var telemetry: [TelemetryRecord]
 
@@ -351,38 +366,55 @@ class AppViewModel: ObservableObject {
     @Published var telemetryTimer: Timer?
     @Published var drones: [Drone] = []
     @Published var checklists: [Checklist] = []
-
-    private var updateTimer: Timer? // Timer to drive UI updates
-
-    @Published var initialCertificateDate: Date {
-        didSet { UserDefaults.standard.set(initialCertificateDate, forKey: certificateDateKey) }
+    
+    @Published var userSettings: UserSettings {
+        didSet { saveUserSettings() }
     }
-    @Published var lastRecurrencyDate: Date {
-        didSet { UserDefaults.standard.set(lastRecurrencyDate, forKey: recurrencyDateKey) }
-    }
+    @Published var needsSetup: Bool = false
 
+    private var updateTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
 
-    private let logbookStorageKey = "Part107Logbook_Logs_v12"
-    private let droneStorageKey = "Part107Logbook_Drones_v12"
-    private let checklistStorageKey = "Part107Logbook_Checklists_v12"
-    private let certificateDateKey = "Part107Logbook_CertDate_v12"
-    private let recurrencyDateKey = "Part107Logbook_RecurrencyDate_v12"
+    private let logbookStorageKey = "Part107Logbook_Logs_v13"
+    private let droneStorageKey = "Part107Logbook_Drones_v13"
+    private let checklistStorageKey = "Part107Logbook_Checklists_v13"
+    private let userSettingsKey = "Part107Logbook_UserSettings_v13"
+    private let setupCompletedKey = "Part107Logbook_SetupCompleted_v13"
 
     init() {
-        self.initialCertificateDate = UserDefaults.standard.object(forKey: certificateDateKey) as? Date ?? Date()
-        self.lastRecurrencyDate = UserDefaults.standard.object(forKey: recurrencyDateKey) as? Date ?? Date()
+        self.userSettings = AppViewModel.loadUserSettings()
+        
         loadLogs()
         loadDrones()
         loadChecklists()
+
+        if !UserDefaults.standard.bool(forKey: setupCompletedKey) {
+            needsSetup = true
+        }
 
         bluetoothScanner.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
     }
 
+    func finalizeSetup(settings: UserSettings, drones: [Drone], hasDoneRecurrent: Bool) {
+        var finalSettings = settings
+        if finalSettings.pilotType == .part107 && !hasDoneRecurrent {
+            finalSettings.part107LastRecurrencyDate = finalSettings.part107InitialCertificateDate
+        }
+        
+        self.userSettings = finalSettings
+        self.drones = drones
+        saveDrones()
+        
+        UserDefaults.standard.set(true, forKey: setupCompletedKey)
+        needsSetup = false
+    }
+
     func startNewLog() {
         activeLog = FlightLog()
+        activeLog.pilotInCommand = userSettings.pilotName
+        
         activeLog.loggedRemoteIDs = []
         if let firstDrone = drones.first {
             activeLog.aircraftID = firstDrone.id
@@ -421,8 +453,6 @@ class AppViewModel: ObservableObject {
     private func startUpdateTimer() {
         updateTimer?.invalidate()
         updateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            // This just tells SwiftUI that the viewmodel has changed, so it should
-            // re-render any views that depend on it (like our duration text).
             self?.objectWillChange.send()
         }
     }
@@ -577,6 +607,20 @@ class AppViewModel: ObservableObject {
             print("Error saving checklists: \(error.localizedDescription)")
         }
     }
+    
+    private func saveUserSettings() {
+        if let encoded = try? JSONEncoder().encode(userSettings) {
+            UserDefaults.standard.set(encoded, forKey: userSettingsKey)
+        }
+    }
+    
+    private static func loadUserSettings() -> UserSettings {
+        if let data = UserDefaults.standard.data(forKey: "Part107Logbook_UserSettings_v13"),
+           let decoded = try? JSONDecoder().decode(UserSettings.self, from: data) {
+            return decoded
+        }
+        return UserSettings()
+    }
 
     func fetchWeather() {
         guard !activeLog.weather.icao.isEmpty else { return }
@@ -670,13 +714,15 @@ class AppViewModel: ObservableObject {
     var totalFlightTime: TimeInterval {
         flightLogs.reduce(0) { $0 + $1.flightDuration }
     }
-
-    var recurrencyExpirationDate: Date {
-        Calendar.current.date(byAdding: .month, value: 24, to: lastRecurrencyDate)!
+    
+    var recurrencyExpirationDate: Date? {
+        guard userSettings.pilotType == .part107 else { return nil }
+        return Calendar.current.date(byAdding: .month, value: 24, to: userSettings.part107LastRecurrencyDate)
     }
 
-    var daysUntilRecurrencyExpires: Int {
-        Calendar.current.dateComponents([.day], from: Date(), to: recurrencyExpirationDate).day ?? 0
+    var daysUntilRecurrencyExpires: Int? {
+        guard let expirationDate = recurrencyExpirationDate else { return nil }
+        return Calendar.current.dateComponents([.day], from: Date(), to: expirationDate).day
     }
 }
 
@@ -704,6 +750,260 @@ struct ContentView: View {
                 .tabItem { Label("Stats", systemImage: "chart.bar.xaxis") }
         }
         .environmentObject(viewModel)
+        .fullScreenCover(isPresented: $viewModel.needsSetup) {
+            SetupView()
+                .environmentObject(viewModel)
+        }
+    }
+}
+
+// MARK: - Setup Views
+struct SetupView: View {
+    @EnvironmentObject var viewModel: AppViewModel
+    
+    @State private var currentStep = 0
+    @State private var settings = UserSettings()
+    @State private var drones: [Drone] = []
+    @State private var hasDoneRecurrent = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // The TabView acts as a pager for the setup steps.
+            TabView(selection: $currentStep.animation()) {
+                SetupStep1_PilotType(settings: $settings).tag(0)
+                SetupStep2_Dates(settings: $settings, hasDoneRecurrent: $hasDoneRecurrent).tag(1)
+                SetupStep3_Equipment(drones: $drones).tag(2)
+            }
+            .tabViewStyle(.page(indexDisplayMode: .never))
+
+            // A clean, bordered view for the navigation controls.
+            VStack {
+                // The page indicator is more subtle now.
+                HStack {
+                    ForEach(0..<3) { index in
+                        Circle()
+                            .fill(index == currentStep ? Color.accentColor : Color.gray.opacity(0.3))
+                            .frame(width: 8, height: 8)
+                            .animation(.spring(), value: currentStep)
+                    }
+                }
+                .padding(.top)
+
+                HStack {
+                    // The "Back" button is only shown when applicable.
+                    if currentStep > 0 {
+                        Button("Back") { currentStep -= 1 }
+                            .buttonStyle(.bordered)
+                    }
+                    
+                    Spacer()
+
+                    if currentStep < 2 {
+                        Button("Next") { currentStep += 1 }
+                            .buttonStyle(.borderedProminent)
+                            // The "Next" button is disabled until the user enters their name.
+                            .disabled(currentStep == 0 && settings.pilotName.trimmingCharacters(in: .whitespaces).isEmpty)
+                    } else {
+                        Button("Finish Setup") {
+                            viewModel.finalizeSetup(settings: settings, drones: drones, hasDoneRecurrent: hasDoneRecurrent)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        // The "Finish" button is disabled until at least one drone has been added.
+                        .disabled(drones.isEmpty)
+                    }
+                }
+                .padding()
+            }
+            .background(.thinMaterial)
+        }
+        // This ignores the safe area for the keyboard, ensuring the view uses all
+        // available space, which is important for smaller devices.
+        .ignoresSafeArea(.keyboard, edges: .bottom)
+    }
+}
+
+/// A view for the first step of the setup process, focusing on pilot identity.
+///
+/// This version enhances the clear and functional `Form` layout with a much more
+/// vibrant and welcoming header section to give the app a great first impression.
+struct SetupStep1_PilotType: View {
+    @Binding var settings: UserSettings
+    
+    var body: some View {
+        Form {
+            // Section 1: A visually engaging header to welcome the user.
+            Section {
+                VStack(spacing: 16) {
+                    Image(systemName: "person.text.rectangle")
+                        .font(.system(size: 50))
+                        .foregroundStyle(Color.accentColor)
+                    
+                    Text("Welcome!")
+                        .font(.largeTitle.bold())
+                    
+                    Text("Let's get your pilot profile set up. This info will be used to auto-fill your flight logs.")
+                        .font(.subheadline)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical)
+            }
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+
+            // Section 2: Input field for the pilot's name.
+            Section("Pilot Information") {
+                TextField("Your Name (Pilot in Command)", text: $settings.pilotName)
+            }
+            
+            // Section 3: A segmented control for selecting the pilot type.
+            Section("Pilot Type") {
+                Picker("Select your pilot type", selection: $settings.pilotType) {
+                    ForEach(PilotType.allCases) { type in
+                        Text(type.rawValue).tag(type)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+        }
+    }
+}
+
+/// A view for the second step of the setup process, for entering certification dates.
+///
+/// This version enhances the Form by incorporating SF Symbols directly into the rows,
+/// creating the "Apple-like" feel in a clean and standard way.
+struct SetupStep2_Dates: View {
+    @Binding var settings: UserSettings
+    @Binding var hasDoneRecurrent: Bool
+
+    var body: some View {
+        Form {
+            // Section 1: A clear header explaining the purpose of this step.
+            Section {
+                VStack(spacing: 16) {
+                    Image(systemName: "calendar.badge.clock")
+                        .font(.system(size: 50))
+                        .foregroundStyle(Color.accentColor)
+
+                    Text("Certification Dates")
+                        .font(.largeTitle.bold())
+                    
+                    Text("Please enter the relevant dates for your pilot certification.")
+                        .font(.subheadline)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical)
+            }
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+            
+            // The view adapts dynamically based on the pilot type selected in the previous step.
+            if settings.pilotType == .part107 {
+                Section(
+                    header: Text("Part 107 Information"),
+                    footer: Text("Your Part 107 certificate itself doesn't expire, but you must complete recurrent training every 24 calendar months to remain current.")
+                ) {
+                    DatePicker("Initial Certificate Date", selection: $settings.part107InitialCertificateDate, in: ...Date(), displayedComponents: .date)
+                    
+                    Toggle("I have completed recurrent training", isOn: $hasDoneRecurrent.animation())
+                    
+                    if hasDoneRecurrent {
+                        DatePicker("Last Recurrency Date", selection: $settings.part107LastRecurrencyDate, in: ...Date(), displayedComponents: .date)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                }
+            } else {
+                Section(
+                    header: Text("Recreational Flyer Information"),
+                    footer: Text("The Recreational UAS Safety Test (TRUST) does not expire.")
+                ) {
+                    DatePicker("TRUST Completion Date", selection: $settings.recreationalTRUSTDate, in: ...Date(), displayedComponents: .date)
+                }
+            }
+        }
+    }
+}
+/// A view for the third step of the setup process, focusing on adding equipment.
+struct SetupStep3_Equipment: View {
+    /// A binding to the array of drones being configured during setup.
+    @Binding var drones: [Drone]
+    
+    /// State to control the presentation of the "Add Drone" sheet.
+    @State private var showAddSheet = false
+
+    var body: some View {
+        Form {
+            // Section 1: A clear header explaining the purpose of this step.
+            Section {
+                VStack(alignment: .center, spacing: 16) {
+                    Image(systemName: "airplane.circle")
+                        .font(.system(size: 50))
+                        .foregroundStyle(Color.accentColor)
+                    
+                    Text("Your Equipment")
+                        .font(.largeTitle.bold())
+                    
+                    Text("Add at least one drone to complete setup. This will be used to track flight time for each aircraft.")
+                        .font(.subheadline)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical)
+            }
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+            
+            // Section 2: Displays the list of added drones or the empty state view.
+            Section(header: Text("My Drones")) {
+                if drones.isEmpty {
+                    // Use ContentUnavailableView for a rich, standard empty state.
+                    // This clearly guides the user on what to do next.
+                    ContentUnavailableView(
+                        "No Drones Added",
+                        systemImage: "shippingbox.circle",
+                        description: Text("Tap 'Add New Drone' to get started.")
+                    )
+                    .padding(.vertical)
+                } else {
+                    // Display the list of drones with an onDelete modifier.
+                    ForEach(drones) { drone in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(drone.displayName)
+                                .font(.headline)
+                            Text("FAA Reg: \(drone.faaRegistration)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 6)
+                    }
+                    .onDelete { offsets in
+                        drones.remove(atOffsets: offsets)
+                    }
+                }
+            }
+            
+            // Section 3: Contains the primary action button for this screen.
+            Section {
+                Button(action: {
+                    showAddSheet = true
+                }) {
+                    Label("Add New Drone", systemImage: "plus")
+                }
+            }
+        }
+        // The sheet modifier presents the AddEditDroneView when showAddSheet is true.
+        // It uses the special initializer that takes a completion closure, which is
+        // ideal for a setup flow.
+        .sheet(isPresented: $showAddSheet) {
+            AddEditDroneView(droneToEdit: nil) { newDrone in
+                drones.append(newDrone)
+            }
+        }
     }
 }
 
@@ -835,7 +1135,6 @@ struct FlightLoggingView: View {
                 Spacer()
                 Text(formatDuration(log.flightDuration))
                     .font(.system(.title, design: .monospaced))
-                    // CORRECTED LINE: Replaced .tint with Color.accentColor
                     .foregroundStyle(viewModel.isSegmentActive ? .green : Color.accentColor)
             }
         }
@@ -1223,14 +1522,19 @@ struct EquipmentListView: View {
         }
     }
 }
+
+// MODIFIED: This view is now more flexible to be used in the setup flow.
 struct AddEditDroneView: View {
     @EnvironmentObject var viewModel: AppViewModel
     @Environment(\.dismiss) var dismiss
 
     @State private var drone: Drone
     let isEditing: Bool
+    var onSave: ((Drone) -> Void)? // Closure to handle saving during setup
 
-    init(droneToEdit: Drone?) {
+    // This initializer determines if we are adding a new drone or editing one.
+    // It also accepts the optional onSave closure.
+    init(droneToEdit: Drone?, onSave: ((Drone) -> Void)? = nil) {
         if let existingDrone = droneToEdit {
             _drone = State(initialValue: existingDrone)
             isEditing = true
@@ -1238,6 +1542,7 @@ struct AddEditDroneView: View {
             _drone = State(initialValue: Drone(id: UUID(), company: "", model: "", faaRegistration: "", remoteIdSerial: ""))
             isEditing = false
         }
+        self.onSave = onSave
     }
 
     var body: some View {
@@ -1250,7 +1555,8 @@ struct AddEditDroneView: View {
                 Section("Identification") {
                     TextField("FAA Registration Number", text: $drone.faaRegistration)
                         .autocapitalization(.allCharacters)
-                    TextField("Remote ID Serial Number", text: $drone.remoteIdSerial)
+                        .disableAutocorrection(true)
+                    TextField("Remote ID Serial Number (if applicable)", text: $drone.remoteIdSerial)
                 }
             }
             .navigationTitle(isEditing ? "Edit Drone" : "Add Drone")
@@ -1258,14 +1564,23 @@ struct AddEditDroneView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        viewModel.saveDrone(drone: drone)
+                        // If the onSave closure was provided (i.e., we are in the setup flow),
+                        // use it. Otherwise, use the viewModel from the environment.
+                        if let onSave = onSave {
+                            onSave(drone)
+                        } else {
+                            viewModel.saveDrone(drone: drone)
+                        }
                         dismiss()
                     }
+                    // Disable save button if critical info is missing.
+                    .disabled(drone.company.isEmpty || drone.model.isEmpty || drone.faaRegistration.isEmpty)
                 }
             }
         }
     }
 }
+
 struct DroneDetailView: View {
     let drone: Drone
     @State private var showEditSheet = false
@@ -1509,6 +1824,7 @@ struct RemoteIDDetailView: View {
 }
 
 // MARK: Stats View
+// MODIFIED: This view is now "Stats & Settings" and reflects the new UserSettings model.
 struct StatsView: View {
     @EnvironmentObject var viewModel: AppViewModel
 
@@ -1523,51 +1839,68 @@ struct StatsView: View {
                 }
             }
 
-            Section("Part 107 Certificate") {
-                DatePicker(
-                    "Initial Issue Date",
-                    selection: $viewModel.initialCertificateDate,
-                    displayedComponents: .date
-                )
-                InfoRow(label: "Status", value: "Certificate does not expire.")
+            Section("Pilot Settings") {
+                TextField("Pilot Name", text: $viewModel.userSettings.pilotName)
+                
+                Picker("Pilot Type", selection: $viewModel.userSettings.pilotType) {
+                    ForEach(PilotType.allCases) { type in
+                        Text(type.rawValue).tag(type)
+                    }
+                }
+                .pickerStyle(.segmented)
             }
 
-            Section("Recurrent Training") {
-                DatePicker(
-                    "Last Training/Exam Date",
-                    selection: $viewModel.lastRecurrencyDate,
-                    displayedComponents: .date
-                )
-                VStack(alignment: .leading) {
-                    Text("Training Expires On")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(viewModel.recurrencyExpirationDate, style: .date)
-                        .bold()
+            if viewModel.userSettings.pilotType == .part107 {
+                Section("Part 107 Certificate") {
+                    DatePicker(
+                        "Initial Issue Date",
+                        selection: $viewModel.userSettings.part107InitialCertificateDate,
+                        displayedComponents: .date
+                    )
+                    InfoRow(label: "Status", value: "Certificate does not expire.")
                 }
-                HStack {
-                    if viewModel.daysUntilRecurrencyExpires <= 0 {
-                        Image(systemName: "xmark.octagon.fill")
-                            .foregroundStyle(.red)
-                        Text("Recurrent Training Expired")
-                            .bold()
-                            .foregroundStyle(.red)
-                    } else if viewModel.daysUntilRecurrencyExpires <= 90 {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                        Text("\(viewModel.daysUntilRecurrencyExpires) days remaining")
-                            .bold()
-                            .foregroundStyle(.orange)
-                    } else {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                        Text("\(viewModel.daysUntilRecurrencyExpires) days remaining")
-                            .bold()
+
+                Section("Recurrent Training") {
+                    DatePicker(
+                        "Last Training/Exam Date",
+                        selection: $viewModel.userSettings.part107LastRecurrencyDate,
+                        displayedComponents: .date
+                    )
+                    
+                    if let expirationDate = viewModel.recurrencyExpirationDate, let daysRemaining = viewModel.daysUntilRecurrencyExpires {
+                        VStack(alignment: .leading) {
+                            Text("Training Expires On")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(expirationDate, style: .date)
+                                .bold()
+                        }
+                        HStack {
+                            if daysRemaining <= 0 {
+                                Image(systemName: "xmark.octagon.fill").foregroundStyle(.red)
+                                Text("Recurrent Training Expired").bold().foregroundStyle(.red)
+                            } else if daysRemaining <= 90 {
+                                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                                Text("\(daysRemaining) days remaining").bold().foregroundStyle(.orange)
+                            } else {
+                                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                                Text("\(daysRemaining) days remaining").bold()
+                            }
+                        }
                     }
+                }
+            } else { // Recreational
+                Section("Recreational Pilot (TRUST)") {
+                    DatePicker(
+                        "TRUST Completion Date",
+                        selection: $viewModel.userSettings.recreationalTRUSTDate,
+                        displayedComponents: .date
+                    )
+                    InfoRow(label: "Status", value: "The Recreational UAS Safety Test (TRUST) does not expire.")
                 }
             }
         }
-        .navigationTitle("Pilot Stats")
+        .navigationTitle("Stats & Settings")
     }
 
     private func formatDuration(_ duration: TimeInterval) -> String {
@@ -1577,7 +1910,6 @@ struct StatsView: View {
         return formatter.string(from: duration) ?? "0 hours"
     }
 }
-
 
 // MARK: - Helper Views
 struct InfoRow: View {
