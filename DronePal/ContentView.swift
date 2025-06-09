@@ -4,7 +4,7 @@ import Combine
 
 // MARK: - Helper Extensions
 extension Data {
-    func toUInt16(at offset: Int) -> UInt16 { // Corrected from UInt116
+    func toUInt16(at offset: Int) -> UInt16 {
         let subdata = self.subdata(in: offset..<(offset+2))
         return subdata.withUnsafeBytes { $0.load(as: UInt16.self) }
     }
@@ -68,6 +68,21 @@ extension Binding {
 
 // MARK: - Models
 
+struct FlightSegment: Identifiable, Codable, Hashable {
+    let id: UUID
+    var startTime: Date
+    var endTime: Date?
+
+    var duration: TimeInterval {
+        if let endTime = endTime {
+            return endTime.timeIntervalSince(startTime)
+        } else {
+            // If the segment is active, calculate duration to now
+            return Date().timeIntervalSince(startTime)
+        }
+    }
+}
+
 struct Checklist: Identifiable, Codable, Hashable {
     let id: UUID
     var name: String
@@ -83,7 +98,7 @@ struct CompletedChecklistItem: Identifiable, Codable, Hashable {
     let id: UUID // Corresponds to ChecklistItem's ID
     var text: String
     var isChecked: Bool
-    var completionDate: Date? // New property to store the timestamp
+    var completionDate: Date?
 }
 
 struct FlightLog: Identifiable, Codable {
@@ -92,28 +107,31 @@ struct FlightLog: Identifiable, Codable {
     var aircraftID: UUID?
     var location: String
     var pilotInCommand: String
-    var flightDuration: TimeInterval
     var missionNotes: String
     var weather: WeatherData
     var pmtcBy: String?
     var visualObserver: String?
     var loggedRemoteIDs: [LoggedRemoteID]?
-    var completedChecklist: [CompletedChecklistItem] // Changed: No longer optional
+    var completedChecklist: [CompletedChecklistItem]
+    var segments: [FlightSegment]
 
-    // Update the initializer with a default value
-    init(id: UUID = UUID(), date: Date = Date(), aircraftID: UUID? = nil, location: String = "", pilotInCommand: String = "", flightDuration: TimeInterval = 0, missionNotes: String = "", weather: WeatherData = WeatherData(), pmtcBy: String? = nil, visualObserver: String? = nil, loggedRemoteIDs: [LoggedRemoteID]? = nil, completedChecklist: [CompletedChecklistItem] = []) {
+    var flightDuration: TimeInterval {
+        segments.reduce(0) { $0 + $1.duration }
+    }
+
+    init(id: UUID = UUID(), date: Date = Date(), aircraftID: UUID? = nil, location: String = "", pilotInCommand: String = "", missionNotes: String = "", weather: WeatherData = WeatherData(), pmtcBy: String? = nil, visualObserver: String? = nil, loggedRemoteIDs: [LoggedRemoteID]? = nil, completedChecklist: [CompletedChecklistItem] = [], segments: [FlightSegment] = []) {
         self.id = id
         self.date = date
         self.aircraftID = aircraftID
         self.location = location
         self.pilotInCommand = pilotInCommand
-        self.flightDuration = flightDuration
         self.missionNotes = missionNotes
         self.weather = weather
         self.pmtcBy = pmtcBy
         self.visualObserver = visualObserver
         self.loggedRemoteIDs = loggedRemoteIDs
-        self.completedChecklist = completedChecklist // Assign the value
+        self.completedChecklist = completedChecklist
+        self.segments = segments
     }
 }
 
@@ -121,7 +139,7 @@ struct LoggedRemoteID: Identifiable, Codable, Hashable {
     let id: UUID // Peripheral identifier
     var basicID: ODIDBasicID?
     var telemetry: [TelemetryRecord]
-    
+
     var displayName: String {
         basicID?.uasID ?? "Unknown ID"
     }
@@ -139,7 +157,7 @@ struct Drone: Identifiable, Codable, Hashable {
     var model: String
     var faaRegistration: String
     var remoteIdSerial: String
-    
+
     var displayName: String {
         "\(company) \(model)"
     }
@@ -176,7 +194,7 @@ class RemoteIDDevice: ObservableObject, Identifiable {
     let id: UUID
     @Published var name: String
     @Published var rssi: NSNumber
-    
+
     @Published var basicID: ODIDBasicID?
     @Published var location: ODIDLocation?
 
@@ -185,7 +203,7 @@ class RemoteIDDevice: ObservableObject, Identifiable {
         self.name = peripheral.name ?? "Drone \(String(peripheral.identifier.uuidString.prefix(4)))"
         self.rssi = rssi
     }
-    
+
     func update(with advertisementData: [String: Any], rssi: NSNumber) {
         DispatchQueue.main.async {
             self.rssi = rssi
@@ -193,7 +211,6 @@ class RemoteIDDevice: ObservableObject, Identifiable {
                   let remoteIDData = serviceData.first?.value else {
                 return
             }
-            
             self.parseODIDMessagePack(data: remoteIDData)
         }
     }
@@ -229,7 +246,7 @@ class RemoteIDDevice: ObservableObject, Identifiable {
             default:
                 break
             }
-            
+
             currentIndex += messageLength
         }
     }
@@ -239,7 +256,7 @@ class RemoteIDDevice: ObservableObject, Identifiable {
 
         let idTypeValue = message[1]
         var idType: String
-        
+
         switch idTypeValue {
         case 0x12:
             idType = "Serial Number"
@@ -258,13 +275,12 @@ class RemoteIDDevice: ObservableObject, Identifiable {
         if uasID.isEmpty {
             return nil
         }
-        
         return ODIDBasicID(idType: idType, uasID: uasID)
     }
 
     private func parseLocation(message: Data) -> ODIDLocation? {
         guard message.count >= 21 else { return nil }
-        
+
         let status = "Airborne"
         let direction = Double(message.toUInt16(at: 2)) * 0.01
         let speedHorizontal = Double(message.toUInt16(at: 4)) * 0.25
@@ -274,7 +290,7 @@ class RemoteIDDevice: ObservableObject, Identifiable {
         let altitudeGeodetic = Double(message.toFloat16(at: 16)) * 0.5 - 1000
         let height = Double(message.toFloat16(at: 18)) * 0.5 - 1000
         let heightType = message[1] & 0x01 == 1 ? "Above Ground" : "Above Takeoff"
-        
+
         return ODIDLocation(status: status, direction: direction, speedHorizontal: speedHorizontal, speedVertical: speedVertical, latitude: latitude, longitude: longitude, altitudeGeodetic: altitudeGeodetic, height: height, heightType: heightType)
     }
 }
@@ -285,23 +301,23 @@ class BluetoothScanner: NSObject, ObservableObject, CBCentralManagerDelegate {
     @Published var discoveredDevices: [RemoteIDDevice] = []
     @Published var isScanning = false
     private var centralManager: CBCentralManager!
-    
+
     override init() {
         super.init()
         centralManager = CBCentralManager(delegate: self, queue: nil)
     }
-    
+
     func startScanning() {
         isScanning = true
         let remoteIDServiceUUID = CBUUID(string: "0000FFFA-0000-1000-8000-00805F9B34FB")
         centralManager.scanForPeripherals(withServices: [remoteIDServiceUUID], options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
     }
-    
+
     func stopScanning() {
         isScanning = false
         centralManager.stopScan()
     }
-    
+
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         if central.state == .poweredOn {
             startScanning()
@@ -310,7 +326,7 @@ class BluetoothScanner: NSObject, ObservableObject, CBCentralManagerDelegate {
             print("Bluetooth is not available.")
         }
     }
-    
+
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String : Any], rssi RSSI: NSNumber) {
         DispatchQueue.main.async {
             if let index = self.discoveredDevices.firstIndex(where: { $0.id == peripheral.identifier }) {
@@ -331,45 +347,46 @@ class AppViewModel: ObservableObject {
     @Published var flightLogs: [FlightLog] = []
     @Published var isLoggingFlight = false
     @Published var activeLog: FlightLog = FlightLog()
-    @Published var timer: Timer?
+    @Published var isSegmentActive = false
     @Published var telemetryTimer: Timer?
     @Published var drones: [Drone] = []
-    @Published var checklists: [Checklist] = [] // New Property
-    
+    @Published var checklists: [Checklist] = []
+
+    private var updateTimer: Timer? // Timer to drive UI updates
+
     @Published var initialCertificateDate: Date {
         didSet { UserDefaults.standard.set(initialCertificateDate, forKey: certificateDateKey) }
     }
     @Published var lastRecurrencyDate: Date {
         didSet { UserDefaults.standard.set(lastRecurrencyDate, forKey: recurrencyDateKey) }
     }
-    
+
     private var cancellables = Set<AnyCancellable>()
-    
-    private let logbookStorageKey = "Part107Logbook_Logs_v10"
-    private let droneStorageKey = "Part107Logbook_Drones_v10"
-    private let checklistStorageKey = "Part107Logbook_Checklists_v10" // New Key
-    private let certificateDateKey = "Part107Logbook_CertDate_v10"
-    private let recurrencyDateKey = "Part107Logbook_RecurrencyDate_v10"
+
+    private let logbookStorageKey = "Part107Logbook_Logs_v12"
+    private let droneStorageKey = "Part107Logbook_Drones_v12"
+    private let checklistStorageKey = "Part107Logbook_Checklists_v12"
+    private let certificateDateKey = "Part107Logbook_CertDate_v12"
+    private let recurrencyDateKey = "Part107Logbook_RecurrencyDate_v12"
 
     init() {
         self.initialCertificateDate = UserDefaults.standard.object(forKey: certificateDateKey) as? Date ?? Date()
         self.lastRecurrencyDate = UserDefaults.standard.object(forKey: recurrencyDateKey) as? Date ?? Date()
         loadLogs()
         loadDrones()
-        loadChecklists() // New Load
-        
+        loadChecklists()
+
         bluetoothScanner.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
     }
-    
+
     func startNewLog() {
         activeLog = FlightLog()
         activeLog.loggedRemoteIDs = []
         if let firstDrone = drones.first {
             activeLog.aircraftID = firstDrone.id
         }
-        // Set a default checklist if one exists
         if let firstChecklist = checklists.first {
             activeLog.completedChecklist = firstChecklist.items.map {
                 CompletedChecklistItem(id: $0.id, text: $0.text, isChecked: false)
@@ -377,74 +394,79 @@ class AppViewModel: ObservableObject {
         }
         bluetoothScanner.startScanning()
         isLoggingFlight = true
-        startTimer()
+        startTelemetryTimer()
     }
-    
-    func startTimer() {
-        timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.activeLog.flightDuration += 1 }
-        
+
+    func startTelemetryTimer() {
         telemetryTimer?.invalidate()
         telemetryTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.recordTelemetrySnapshot()
         }
     }
-    
+
+    func startNewSegment() {
+        let newSegment = FlightSegment(id: UUID(), startTime: Date())
+        activeLog.segments.append(newSegment)
+        isSegmentActive = true
+        startUpdateTimer()
+    }
+
+    func endCurrentSegment() {
+        guard let lastSegmentIndex = activeLog.segments.indices.last, activeLog.segments[lastSegmentIndex].endTime == nil else { return }
+        activeLog.segments[lastSegmentIndex].endTime = Date()
+        isSegmentActive = false
+        stopUpdateTimer()
+    }
+
+    private func startUpdateTimer() {
+        updateTimer?.invalidate()
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            // This just tells SwiftUI that the viewmodel has changed, so it should
+            // re-render any views that depend on it (like our duration text).
+            self?.objectWillChange.send()
+        }
+    }
+
+    private func stopUpdateTimer() {
+        updateTimer?.invalidate()
+        updateTimer = nil
+    }
+
     func recordTelemetrySnapshot() {
         let timestamp = Date()
         var updatedLoggedIDs = activeLog.loggedRemoteIDs ?? []
 
-        // Iterate through all devices the scanner currently sees.
         for device in bluetoothScanner.discoveredDevices {
-            // Check if we are already logging this device.
             if let index = updatedLoggedIDs.firstIndex(where: { $0.id == device.id }) {
-                // --- UPDATE EXISTING DEVICE ---
-                // We are already logging it, so let's update its data.
-                
-                // Update the Basic ID if it's available.
                 if let basicID = device.basicID {
                     updatedLoggedIDs[index].basicID = basicID
                 }
-                
-                // If location data is available, add a new telemetry point.
                 if let location = device.location {
                     let newRecord = TelemetryRecord(timestamp: timestamp, location: location, rssi: device.rssi.intValue)
                     updatedLoggedIDs[index].telemetry.append(newRecord)
                 }
-                
             } else {
-                // --- ADD NEW DEVICE ---
-                // This is a new device. Add it to our log for the first time.
-                // It's okay if its basicID or location is nil for now; they will be updated later.
-                var newLoggedID = LoggedRemoteID(
-                    id: device.id,
-                    basicID: device.basicID,
-                    telemetry: [] // Start with an empty telemetry log.
-                )
-                
-                // If location is available on this first sighting, add the first telemetry point.
+                var newLoggedID = LoggedRemoteID(id: device.id, basicID: device.basicID, telemetry: [])
                 if let location = device.location {
                     let newRecord = TelemetryRecord(timestamp: timestamp, location: location, rssi: device.rssi.intValue)
                     newLoggedID.telemetry.append(newRecord)
                 }
-                
                 updatedLoggedIDs.append(newLoggedID)
             }
         }
-
-        // Only assign the array back if it has actually changed.
         if updatedLoggedIDs != activeLog.loggedRemoteIDs {
             activeLog.loggedRemoteIDs = updatedLoggedIDs
         }
     }
-    
+
     func stopLogging() {
-        timer?.invalidate()
-        timer = nil
-        
+        if isSegmentActive {
+            endCurrentSegment()
+        }
         telemetryTimer?.invalidate()
         telemetryTimer = nil
-        
+        stopUpdateTimer()
+
         isLoggingFlight = false
         bluetoothScanner.stopScanning()
         saveLog(activeLog)
@@ -456,7 +478,6 @@ class AppViewModel: ObservableObject {
         } else {
             flightLogs.insert(log, at: 0)
         }
-        
         do {
             let data = try JSONEncoder().encode(flightLogs)
             UserDefaults.standard.set(data, forKey: logbookStorageKey)
@@ -464,7 +485,7 @@ class AppViewModel: ObservableObject {
             print("Error saving logs: \(error.localizedDescription)")
         }
     }
-    
+
     func loadLogs() {
         guard let data = UserDefaults.standard.data(forKey: logbookStorageKey) else { return }
         do {
@@ -473,12 +494,12 @@ class AppViewModel: ObservableObject {
             print("Error loading logs: \(error.localizedDescription)")
         }
     }
-    
+
     func deleteLog(at offsets: IndexSet) {
         flightLogs.remove(atOffsets: offsets)
         saveLogs()
     }
-    
+
     private func saveLogs() {
         do {
             let data = try JSONEncoder().encode(flightLogs)
@@ -487,12 +508,12 @@ class AppViewModel: ObservableObject {
             print("Error saving logs: \(error.localizedDescription)")
         }
     }
-    
+
     func droneForID(_ id: UUID?) -> Drone? {
         guard let id = id else { return nil }
         return drones.first { $0.id == id }
     }
-    
+
     func saveDrone(drone: Drone) {
         if let index = drones.firstIndex(where: { $0.id == drone.id }) {
             drones[index] = drone
@@ -501,7 +522,7 @@ class AppViewModel: ObservableObject {
         }
         saveDrones()
     }
-    
+
     func loadDrones() {
         guard let data = UserDefaults.standard.data(forKey: droneStorageKey) else { return }
         do {
@@ -510,7 +531,7 @@ class AppViewModel: ObservableObject {
             print("Error loading drones: \(error.localizedDescription)")
         }
     }
-    
+
     func deleteDrone(at offsets: IndexSet) {
         drones.remove(atOffsets: offsets)
         saveDrones()
@@ -524,8 +545,7 @@ class AppViewModel: ObservableObject {
             print("Error saving drones: \(error.localizedDescription)")
         }
     }
-    
-    // MARK: Checklist Functions (New)
+
     func saveChecklist(_ checklist: Checklist) {
         if let index = checklists.firstIndex(where: { $0.id == checklist.id }) {
             checklists[index] = checklist
@@ -534,12 +554,12 @@ class AppViewModel: ObservableObject {
         }
         saveChecklists()
     }
-    
+
     func deleteChecklist(at offsets: IndexSet) {
         checklists.remove(atOffsets: offsets)
         saveChecklists()
     }
-    
+
     func loadChecklists() {
         guard let data = UserDefaults.standard.data(forKey: checklistStorageKey) else { return }
         do {
@@ -548,7 +568,7 @@ class AppViewModel: ObservableObject {
             print("Error loading checklists: \(error.localizedDescription)")
         }
     }
-    
+
     private func saveChecklists() {
         do {
             let data = try JSONEncoder().encode(checklists)
@@ -557,24 +577,22 @@ class AppViewModel: ObservableObject {
             print("Error saving checklists: \(error.localizedDescription)")
         }
     }
-    
+
     func fetchWeather() {
         guard !activeLog.weather.icao.isEmpty else { return }
         let icao = activeLog.weather.icao.uppercased()
         guard let url = URL(string: "https://aviationweather.gov/api/data/metar?ids=\(icao)&format=json") else { return }
-        
+
         var request = URLRequest(url: url)
         request.setValue("Part 107 Logbook App", forHTTPHeaderField: "User-Agent")
-        
+
         URLSession.shared.dataTask(with: request) { data, _, error in
             guard let data = data else {
                 print("No data received: \(error?.localizedDescription ?? "Unknown error")")
                 return
             }
-            
             do {
                 let metarReports = try JSONDecoder().decode([MetarReport].self, from: data)
-                
                 DispatchQueue.main.async {
                     if let report = metarReports.first {
                         self.activeLog.weather.metar = report.rawOb
@@ -607,12 +625,12 @@ class AppViewModel: ObservableObject {
             let minute = timeComponent.dropFirst(4).prefix(2)
             decodedParts.append("Time: Day \(day) at \(hour):\(minute) Zulu")
         }
-        
+
         if let index = components.firstIndex(of: "AUTO") {
             decodedParts.append("Report Type: Automated")
             components.remove(at: index)
         }
-        
+
         if let windComponent = components.first(where: { $0.contains("KT") || $0.contains("MPS") }) {
             if let index = components.firstIndex(of: windComponent) {
                 let unit = windComponent.contains("KT") ? "knots" : "m/s"
@@ -621,7 +639,7 @@ class AppViewModel: ObservableObject {
                 var windDesc = "Wind: From \(direction)° at \(speedString) \(unit)"
                 if let gustIndex = windComponent.firstIndex(of: "G") {
                     let gustSpeed = String(windComponent[windComponent.index(after: gustIndex)...].dropLast(2))
-                        windDesc += ", gusting to \(gustSpeed) \(unit)"
+                    windDesc += ", gusting to \(gustSpeed) \(unit)"
                 }
                 decodedParts.append(windDesc)
                 components.remove(at: index)
@@ -646,18 +664,17 @@ class AppViewModel: ObservableObject {
             decodedParts.append("Ceiling and Visibility OK")
             components.remove(at: cavokIndex)
         }
-        
         return decodedParts.joined(separator: "\n")
     }
-    
+
     var totalFlightTime: TimeInterval {
         flightLogs.reduce(0) { $0 + $1.flightDuration }
     }
-    
+
     var recurrencyExpirationDate: Date {
         Calendar.current.date(byAdding: .month, value: 24, to: lastRecurrencyDate)!
     }
-    
+
     var daysUntilRecurrencyExpires: Int {
         Calendar.current.dateComponents([.day], from: Date(), to: recurrencyExpirationDate).day ?? 0
     }
@@ -668,21 +685,21 @@ class AppViewModel: ObservableObject {
 
 struct ContentView: View {
     @StateObject private var viewModel = AppViewModel()
-    
+
     var body: some View {
         TabView {
             NavigationStack { FlightLogListView() }
                 .tabItem { Label("Logbook", systemImage: "book.closed.fill") }
-            
+
             NavigationStack { EquipmentListView() }
                 .tabItem { Label("Equipment", systemImage: "airplane.circle.fill") }
 
-            NavigationStack { ChecklistListView() } // New Tab
+            NavigationStack { ChecklistListView() }
                 .tabItem { Label("Checklists", systemImage: "checklist") }
 
             NavigationStack { RemoteIDScannerView() }
                 .tabItem { Label("Scanner", systemImage: "antenna.radiowaves.left.and.right") }
-            
+
             NavigationStack { StatsView() }
                 .tabItem { Label("Stats", systemImage: "chart.bar.xaxis") }
         }
@@ -693,7 +710,7 @@ struct ContentView: View {
 // MARK: Logbook Views
 struct FlightLogListView: View {
     @EnvironmentObject var viewModel: AppViewModel
-    
+
     var body: some View {
         Group {
             if viewModel.flightLogs.isEmpty {
@@ -738,7 +755,7 @@ struct FlightLogListView: View {
             FlightLoggingView(log: $viewModel.activeLog)
         }
     }
-    
+
     private func formatDuration(_ duration: TimeInterval) -> String {
         let formatter = DateComponentsFormatter()
         formatter.allowedUnits = [.hour, .minute, .second]
@@ -756,7 +773,7 @@ struct LoggedIDDetailView: View {
                 InfoRow(label: "Registration / Serial Number", value: loggedID.basicID?.uasID ?? "N/A")
                 InfoRow(label: "ID Type", value: loggedID.basicID?.idType ?? "N/A")
             }
-            
+
             Section("Full Telemetry Log (\(loggedID.telemetry.count) records)") {
                 List(loggedID.telemetry, id: \.self) { record in
                     TelemetryRow(record: record)
@@ -780,6 +797,8 @@ struct FlightLoggingView: View {
         NavigationView {
             Form {
                 liveLoggingSection
+                inFlightControlsSection
+                flightSegmentsSection
                 remoteIDSection
                 checklistSection
                 flightDetailsSection
@@ -791,8 +810,7 @@ struct FlightLoggingView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
-                        viewModel.bluetoothScanner.stopScanning()
-                        viewModel.isLoggingFlight = false
+                        viewModel.stopLogging()
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
@@ -813,11 +831,64 @@ struct FlightLoggingView: View {
     private var liveLoggingSection: some View {
         Section("Live Flight Logging") {
             HStack {
-                Text("Duration:")
+                Text("Total Duration:")
                 Spacer()
                 Text(formatDuration(log.flightDuration))
                     .font(.system(.title, design: .monospaced))
-                    .foregroundStyle(.tint)
+                    // CORRECTED LINE: Replaced .tint with Color.accentColor
+                    .foregroundStyle(viewModel.isSegmentActive ? .green : Color.accentColor)
+            }
+        }
+    }
+
+    private var inFlightControlsSection: some View {
+        Section("In-Flight Controls") {
+            HStack {
+                Button(action: viewModel.startNewSegment) {
+                    Text("Take Off")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(viewModel.isSegmentActive)
+
+                Button(action: viewModel.endCurrentSegment) {
+                    Text("Land")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!viewModel.isSegmentActive)
+            }
+        }
+    }
+    
+    private var flightSegmentsSection: some View {
+        Section("Flight Segments") {
+            if log.segments.isEmpty {
+                Text("Press 'Take Off' to start a segment.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(log.segments.reversed()) { segment in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("Takeoff:")
+                                .fontWeight(.medium)
+                            Text(segment.startTime, style: .time)
+                            Spacer()
+                            if let endTime = segment.endTime {
+                                Text("Landing:")
+                                    .fontWeight(.medium)
+                                Text(endTime, style: .time)
+                            } else {
+                                Text("In Progress")
+                                    .fontWeight(.bold)
+                                    .foregroundStyle(.green)
+                            }
+                        }
+                        Text("Duration: \(formatDuration(segment.duration))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
         }
     }
@@ -861,7 +932,7 @@ struct FlightLoggingView: View {
             }
         }
     }
-    
+
     private var checklistPicker: some View {
         Picker("Select Checklist", selection: $selectedChecklistID) {
             Text("None").tag(nil as UUID?)
@@ -877,10 +948,7 @@ struct FlightLoggingView: View {
     private var completedItemsList: some View {
         ForEach($log.completedChecklist) { $item in
             Button(action: {
-                // Toggle the checked state
                 $item.isChecked.wrappedValue.toggle()
-                
-                // Set or clear the timestamp based on the new state
                 if $item.isChecked.wrappedValue {
                     $item.completionDate.wrappedValue = Date()
                 } else {
@@ -890,23 +958,19 @@ struct FlightLoggingView: View {
                 HStack {
                     Image(systemName: item.isChecked ? "checkmark.circle.fill" : "circle")
                         .foregroundStyle(item.isChecked ? .green : .secondary)
-                    
                     Text(item.text)
                         .strikethrough(item.isChecked)
                         .foregroundStyle(item.isChecked ? .secondary : .primary)
-                    
                     Spacer()
-                    
-                    // Display the timestamp if it exists
                     if let completionDate = item.completionDate {
                         Text(completionDate, style: .time)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
-                .contentShape(Rectangle()) // Makes the whole row tappable
+                .contentShape(Rectangle())
             }
-            .buttonStyle(PlainButtonStyle()) // Keeps the text color from turning blue
+            .buttonStyle(PlainButtonStyle())
         }
     }
 
@@ -953,7 +1017,6 @@ struct FlightLoggingView: View {
                 Button("Fetch", action: viewModel.fetchWeather)
                     .disabled(log.weather.icao.count != 4)
             }
-
             VStack(alignment: .leading, spacing: 5) {
                 Text("Raw METAR").font(.caption).foregroundStyle(.secondary)
                 Text(log.weather.metar)
@@ -965,16 +1028,12 @@ struct FlightLoggingView: View {
         }
     }
 
-    // MARK: - Helper Functions
-
     private func updateCompletedChecklist(for checklistId: UUID?) {
         guard let id = checklistId, let checklist = viewModel.checklists.first(where: { $0.id == id }) else {
             log.completedChecklist = []
             return
         }
-
         log.completedChecklist = checklist.items.map {
-            // Ensure completionDate is nil initially
             CompletedChecklistItem(id: $0.id, text: $0.text, isChecked: false, completionDate: nil)
         }
     }
@@ -991,37 +1050,52 @@ struct FlightLoggingView: View {
 struct FlightDetailView: View {
     @EnvironmentObject var viewModel: AppViewModel
     let log: FlightLog
-    
+
     var body: some View {
         Form {
             Section("Flight Information") {
                 InfoRow(label: "Aircraft", value: viewModel.droneForID(log.aircraftID)?.displayName ?? "N/A")
                 InfoRow(label: "Location", value: log.location)
                 InfoRow(label: "Date", value: log.date.formatted(date: .long, time: .shortened))
-                InfoRow(label: "Duration", value: formatDuration(log.flightDuration))
+                InfoRow(label: "Total Duration", value: formatDuration(log.flightDuration))
                 InfoRow(label: "Pilot in Command", value: log.pilotInCommand)
             }
-            
+
+            if !log.segments.isEmpty {
+                Section("Flight Segments") {
+                    ForEach(log.segments) { segment in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text("Takeoff: \(segment.startTime.formatted(date: .omitted, time: .standard))")
+                                Spacer()
+                                if let endTime = segment.endTime {
+                                    Text("Landing: \(endTime.formatted(date: .omitted, time: .standard))")
+                                }
+                            }
+                            Text("Duration: \(formatDuration(segment.duration))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
             if (log.pmtcBy != nil && !log.pmtcBy!.isEmpty) || (log.visualObserver != nil && !log.visualObserver!.isEmpty) {
                 Section("Additional Crew") {
                     if let pmtc = log.pmtcBy, !pmtc.isEmpty { InfoRow(label: "PMTC By", value: pmtc) }
                     if let vo = log.visualObserver, !vo.isEmpty { InfoRow(label: "Visual Observer", value: vo) }
                 }
             }
-            
+
             if !log.completedChecklist.isEmpty {
                 Section("Pre-flight Checklist") {
                     ForEach(log.completedChecklist) { item in
                         HStack {
                             Image(systemName: item.isChecked ? "checkmark.circle.fill" : "x.circle.fill")
                                 .foregroundStyle(item.isChecked ? .green : .red)
-                            
                             Text(item.text)
                                 .strikethrough(item.isChecked)
-                            
                             Spacer()
-                            
-                            // Display the saved timestamp
                             if let completionDate = item.completionDate {
                                 Text(completionDate, style: .time)
                                     .font(.caption)
@@ -1051,7 +1125,7 @@ struct FlightDetailView: View {
                     }
                 }
             }
-            
+
             Section("Mission Notes") {
                 Text(log.missionNotes.isEmpty ? "No notes." : log.missionNotes)
             }
@@ -1067,20 +1141,21 @@ struct FlightDetailView: View {
     private func formatDuration(_ duration: TimeInterval) -> String {
         let formatter = DateComponentsFormatter()
         formatter.allowedUnits = [.hour, .minute, .second]
-        formatter.unitsStyle = .full
-        return formatter.string(from: duration) ?? "N/A"
+        formatter.unitsStyle = .positional
+        formatter.zeroFormattingBehavior = .pad
+        return formatter.string(from: duration) ?? "00:00:00"
     }
 }
 
 struct TelemetryRow: View {
     let record: TelemetryRecord
-    
+
     private static var timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss"
         return formatter
     }()
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
@@ -1091,13 +1166,12 @@ struct TelemetryRow: View {
                     .font(.caption)
                     .foregroundColor(rssiColor(NSNumber(value: record.rssi)))
             }
-            
             Text(String(format: "Lat: %.5f, Lon: %.5f", record.location.latitude, record.location.longitude))
             Text(String(format: "Alt (AGL): %.1f m, Speed: %.1f m/s, Hdg: %d°", record.location.height ?? 0, record.location.speedHorizontal, Int(record.location.direction)))
         }
         .font(.footnote)
     }
-    
+
     func rssiColor(_ rssi: NSNumber) -> Color {
         switch rssi.intValue {
         case -60...0: return .green
@@ -1112,7 +1186,7 @@ struct TelemetryRow: View {
 struct EquipmentListView: View {
     @EnvironmentObject var viewModel: AppViewModel
     @State private var showAddDroneSheet = false
-    
+
     var body: some View {
         Group {
             if viewModel.drones.isEmpty {
@@ -1152,10 +1226,10 @@ struct EquipmentListView: View {
 struct AddEditDroneView: View {
     @EnvironmentObject var viewModel: AppViewModel
     @Environment(\.dismiss) var dismiss
-    
+
     @State private var drone: Drone
     let isEditing: Bool
-    
+
     init(droneToEdit: Drone?) {
         if let existingDrone = droneToEdit {
             _drone = State(initialValue: existingDrone)
@@ -1165,7 +1239,7 @@ struct AddEditDroneView: View {
             isEditing = false
         }
     }
-    
+
     var body: some View {
         NavigationView {
             Form {
@@ -1195,7 +1269,7 @@ struct AddEditDroneView: View {
 struct DroneDetailView: View {
     let drone: Drone
     @State private var showEditSheet = false
-    
+
     var body: some View {
         Form {
             Section("Drone Info") {
@@ -1217,11 +1291,11 @@ struct DroneDetailView: View {
     }
 }
 
-// MARK: Checklist Views (New)
+// MARK: Checklist Views
 struct ChecklistListView: View {
     @EnvironmentObject var viewModel: AppViewModel
     @State private var showAddChecklistSheet = false
-    
+
     var body: some View {
         Group {
             if viewModel.checklists.isEmpty {
@@ -1262,10 +1336,10 @@ struct ChecklistListView: View {
 struct AddEditChecklistView: View {
     @EnvironmentObject var viewModel: AppViewModel
     @Environment(\.dismiss) var dismiss
-    
+
     @State private var checklist: Checklist
     let isEditing: Bool
-    
+
     init(checklistToEdit: Checklist?) {
         if let existingChecklist = checklistToEdit {
             _checklist = State(initialValue: existingChecklist)
@@ -1275,14 +1349,13 @@ struct AddEditChecklistView: View {
             isEditing = false
         }
     }
-    
+
     var body: some View {
         NavigationView {
             Form {
                 Section("Checklist Details") {
                     TextField("Checklist Name", text: $checklist.name)
                 }
-                
                 Section("Checklist Items") {
                     ForEach($checklist.items) { $item in
                         TextField("Checklist item", text: $item.text)
@@ -1290,7 +1363,6 @@ struct AddEditChecklistView: View {
                     .onDelete { offsets in
                         checklist.items.remove(atOffsets: offsets)
                     }
-                    
                     Button("Add Item", systemImage: "plus") {
                         let newItem = ChecklistItem(id: UUID(), text: "")
                         checklist.items.append(newItem)
@@ -1302,12 +1374,8 @@ struct AddEditChecklistView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel", role: .cancel) { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        // Create a mutable copy to modify before saving
                         var checklistToSave = checklist
-                        
-                        // Corrected: Remove items with empty or whitespace-only text before saving
                         checklistToSave.items.removeAll { $0.text.trimmingCharacters(in: .whitespaces).isEmpty }
-                        
                         viewModel.saveChecklist(checklistToSave)
                         dismiss()
                     }
@@ -1321,7 +1389,7 @@ struct AddEditChecklistView: View {
 struct ChecklistDetailView: View {
     let checklist: Checklist
     @State private var showEditSheet = false
-    
+
     var body: some View {
         Form {
             Section("Checklist Items") {
@@ -1387,9 +1455,7 @@ struct RemoteIDScannerView: View {
             }
         }
         .navigationTitle("Remote ID Scanner")
-        .onAppear {
-              viewModel.bluetoothScanner.startScanning()
-        }
+        .onAppear(perform: viewModel.bluetoothScanner.startScanning)
         .onDisappear(perform: viewModel.bluetoothScanner.stopScanning)
         .sheet(item: $selectedDevice) { device in
             RemoteIDDetailView(device: device)
@@ -1408,7 +1474,7 @@ struct RemoteIDScannerView: View {
 struct RemoteIDDetailView: View {
     @ObservedObject var device: RemoteIDDevice
     @Environment(\.dismiss) var dismiss
-    
+
     var body: some View {
         NavigationView {
             Form {
@@ -1417,7 +1483,6 @@ struct RemoteIDDetailView: View {
                     InfoRow(label: "ID Type", value: device.basicID?.idType ?? "N/A")
                     InfoRow(label: "Registration Number", value: device.basicID?.uasID ?? "N/A")
                 }
-                
                 Section("Telemetry") {
                     InfoRow(label: "Signal Strength (RSSI)", value: "\(device.rssi) dBm")
                     if let location = device.location {
@@ -1436,7 +1501,7 @@ struct RemoteIDDetailView: View {
             .navigationTitle("Remote ID Details")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") { dismiss() }
+                    Button("Done") { dismiss() }
                 }
             }
         }
@@ -1446,7 +1511,7 @@ struct RemoteIDDetailView: View {
 // MARK: Stats View
 struct StatsView: View {
     @EnvironmentObject var viewModel: AppViewModel
-    
+
     var body: some View {
         Form {
             Section("Flight Time") {
@@ -1466,14 +1531,13 @@ struct StatsView: View {
                 )
                 InfoRow(label: "Status", value: "Certificate does not expire.")
             }
-            
+
             Section("Recurrent Training") {
                 DatePicker(
                     "Last Training/Exam Date",
                     selection: $viewModel.lastRecurrencyDate,
                     displayedComponents: .date
                 )
-                
                 VStack(alignment: .leading) {
                     Text("Training Expires On")
                         .font(.caption)
@@ -1481,7 +1545,6 @@ struct StatsView: View {
                     Text(viewModel.recurrencyExpirationDate, style: .date)
                         .bold()
                 }
-                
                 HStack {
                     if viewModel.daysUntilRecurrencyExpires <= 0 {
                         Image(systemName: "xmark.octagon.fill")
@@ -1506,7 +1569,7 @@ struct StatsView: View {
         }
         .navigationTitle("Pilot Stats")
     }
-    
+
     private func formatDuration(_ duration: TimeInterval) -> String {
         let formatter = DateComponentsFormatter()
         formatter.allowedUnits = [.hour, .minute]
@@ -1521,7 +1584,7 @@ struct InfoRow: View {
     var label: String
     var value: String
     var multiline: Bool = false
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label)
