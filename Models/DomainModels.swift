@@ -14,6 +14,18 @@ struct CodableCoordinate: Codable, Hashable {
     }
 }
 
+struct AppData: Codable {
+    var flightLogs: [FlightLog]
+    var drones: [Drone]
+    var checklists: [Checklist]
+    var userSettings: UserSettings
+    
+    // Provides a clean, empty state for the first app launch
+    static var empty: AppData {
+        AppData(flightLogs: [], drones: [], checklists: [], userSettings: UserSettings())
+    }
+}
+
 // MARK: - Flight Area Model
 // A struct to hold the defined flight area details
 struct FlightArea: Codable, Hashable {

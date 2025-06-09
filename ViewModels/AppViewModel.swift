@@ -2,29 +2,33 @@ import Foundation
 import Combine
 
 /// The primary ViewModel for the application, responsible for state management and business logic.
-/// This class acts as the "source of truth" for the views.
+/// This class acts as the "source of truth" for the views, loading from and saving to a single JSON file.
 @MainActor
 class AppViewModel: ObservableObject {
     // MARK: Published Properties
     @Published var bluetoothScanner = BluetoothScanner()
     
+    // These properties represent the entire state of the app's user-created data.
     @Published var flightLogs: [FlightLog] = []
     @Published var drones: [Drone] = []
     @Published var checklists: [Checklist] = []
-    @Published var userSettings: UserSettings
+    @Published var userSettings: UserSettings = UserSettings()
     
+    // Properties managing the live state of the UI and flight logging.
     @Published var needsSetup: Bool = false
     @Published var isLoggingFlight = false
     @Published var activeLog = FlightLog()
     @Published var isSegmentActive = false
 
+    private let persistenceService = PersistenceService()
     private var telemetryTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
 
     init() {
-        self.userSettings = Self.loadData(from: Constants.UserDefaultsKeys.userSettings) ?? UserSettings()
-        loadAllData()
+        // Load all data from the JSON file on startup.
+        loadData()
         
+        // UserDefaults is still appropriate for simple, non-critical flags like this.
         self.needsSetup = !UserDefaults.standard.bool(forKey: Constants.UserDefaultsKeys.setupCompleted)
 
         // Propagate changes from the scanner to this ViewModel's subscribers.
@@ -36,6 +40,29 @@ class AppViewModel: ObservableObject {
         // Clean up stale items from the trash on app launch.
         purgeStaleTrashedLogs()
     }
+    
+    // MARK: - Data Persistence
+    
+    /// Loads the entire application state from the JSON file via the PersistenceService.
+    private func loadData() {
+        let appData = persistenceService.load()
+        self.flightLogs = appData.flightLogs
+        self.drones = appData.drones
+        self.checklists = appData.checklists
+        self.userSettings = appData.userSettings
+    }
+    
+    /// Collects the entire application state and saves it to the JSON file.
+    /// This is the single source of truth for saving data.
+    private func saveData() {
+        let currentData = AppData(
+            flightLogs: self.flightLogs,
+            drones: self.drones,
+            checklists: self.checklists,
+            userSettings: self.userSettings
+        )
+        persistenceService.save(appData: currentData)
+    }
 
     // MARK: - Setup Flow
     func finalizeSetup(settings: UserSettings, drones: [Drone], hasDoneRecurrent: Bool) {
@@ -46,11 +73,11 @@ class AppViewModel: ObservableObject {
         
         self.userSettings = finalSettings
         self.drones = drones
-        saveUserSettings()
-        saveDrones()
         
         UserDefaults.standard.set(true, forKey: Constants.UserDefaultsKeys.setupCompleted)
         needsSetup = false
+        
+        saveData()
     }
 
     // MARK: - Flight Logging
@@ -73,12 +100,9 @@ class AppViewModel: ObservableObject {
     func discardActiveLog() {
         if isSegmentActive { endCurrentSegment() }
         stopTelemetryTimer()
-        
-        activeLog.trashedDate = Date()
-        saveLog(activeLog) // Save the trashed log
-        
         isLoggingFlight = false
         bluetoothScanner.stopScanning()
+        // No save here, the log was never added to the main array.
     }
 
     func saveAndStopLogging() {
@@ -102,6 +126,17 @@ class AppViewModel: ObservableObject {
 
     // MARK: - Data Persistence (CRUD Operations)
     
+    private func saveLog(_ log: FlightLog) {
+        if let index = self.flightLogs.firstIndex(where: { $0.id == log.id }) {
+            self.flightLogs[index] = log
+        } else {
+            // Sort by date descending when inserting a new log.
+            self.flightLogs.append(log)
+            self.flightLogs.sort { $0.date > $1.date }
+        }
+        saveData()
+    }
+    
     func moveLogToTrash(at offsets: IndexSet) {
         let activeLogs = self.activeFlightLogs
         let logsToMove = offsets.map { activeLogs[$0] }
@@ -111,7 +146,7 @@ class AppViewModel: ObservableObject {
                 self.flightLogs[index].trashedDate = Date()
             }
         }
-        saveLogs()
+        saveData()
     }
     
     func restoreLogFromTrash(at offsets: IndexSet) {
@@ -123,14 +158,14 @@ class AppViewModel: ObservableObject {
                 self.flightLogs[index].trashedDate = nil
             }
         }
-        saveLogs()
+        saveData()
     }
     
     func deleteLogPermanently(at offsets: IndexSet) {
         let trashed = self.trashedFlightLogs
         let idsToDelete = offsets.map { trashed[$0].id }
         self.flightLogs.removeAll { idsToDelete.contains($0.id) }
-        saveLogs()
+        saveData()
     }
 
     func saveDrone(drone: Drone) {
@@ -139,7 +174,7 @@ class AppViewModel: ObservableObject {
         } else {
             drones.append(drone)
         }
-        saveDrones()
+        saveData()
     }
     
     func saveChecklist(_ checklist: Checklist) {
@@ -148,17 +183,22 @@ class AppViewModel: ObservableObject {
         } else {
             checklists.append(checklist)
         }
-        saveChecklists()
+        saveData()
+    }
+    
+    func saveUserSettings() {
+        // This function now simply triggers a save of the entire app's data.
+        saveData()
     }
     
     func deleteDrone(at offsets: IndexSet) {
         drones.remove(atOffsets: offsets)
-        saveDrones()
+        saveData()
     }
     
     func deleteChecklist(at offsets: IndexSet) {
         checklists.remove(atOffsets: offsets)
-        saveChecklists()
+        saveData()
     }
     
     // MARK: - Weather Service
@@ -230,13 +270,12 @@ class AppViewModel: ObservableObject {
         
         if self.flightLogs.count != originalCount {
             AppLogger.persistence.info("Purged \(originalCount - self.flightLogs.count) stale log(s) from trash.")
-            saveLogs()
+            saveData()
         }
     }
 
     private func startTelemetryTimer() {
         telemetryTimer?.invalidate()
-        // <-- FIXED: This closure now correctly dispatches its work to the main actor.
         telemetryTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.recordTelemetrySnapshot()
@@ -268,53 +307,16 @@ class AppViewModel: ObservableObject {
         self.activeLog.loggedRemoteIDs = updatedLoggedIDs
     }
     
-    private func saveLog(_ log: FlightLog) {
-        if let index = self.flightLogs.firstIndex(where: { $0.id == log.id }) {
-            self.flightLogs[index] = log
-        } else {
-            self.flightLogs.insert(log, at: 0)
-        }
-        saveLogs()
-    }
-    
-    private func loadAllData() {
-        flightLogs = Self.loadData(from: Constants.UserDefaultsKeys.logbookStorage) ?? []
-        drones = Self.loadData(from: Constants.UserDefaultsKeys.droneStorage) ?? []
-        checklists = Self.loadData(from: Constants.UserDefaultsKeys.checklistStorage) ?? []
-    }
-    
-    private func saveLogs() { Self.saveData(self.flightLogs.sorted(by: { $0.date > $1.date }), to: Constants.UserDefaultsKeys.logbookStorage) }
-    private func saveDrones() { Self.saveData(drones, to: Constants.UserDefaultsKeys.droneStorage) }
-    private func saveChecklists() { Self.saveData(checklists, to: Constants.UserDefaultsKeys.checklistStorage) }
-    func saveUserSettings() { Self.saveData(userSettings, to: Constants.UserDefaultsKeys.userSettings) }
-    
-    private static func saveData<T: Encodable>(_ data: T, to key: String) {
-        do {
-            let encodedData = try JSONEncoder().encode(data)
-            UserDefaults.standard.set(encodedData, forKey: key)
-        } catch {
-            AppLogger.persistence.error("Failed to save data for key \(key): \(error.localizedDescription)")
-        }
-    }
-    
-    private static func loadData<T: Decodable>(from key: String) -> T? {
-        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
-        do {
-            return try JSONDecoder().decode(T.self, from: data)
-        } catch {
-            AppLogger.persistence.error("Failed to load/decode data for key \(key): \(error.localizedDescription)")
-            return nil
-        }
-    }
-    
     private func decodeMetar(raw: String) -> String {
         // This is a simplistic parser. For production, a more robust solution
         // like regex or a dedicated library would be better.
         var decodedParts: [String] = []
-        var components = raw.split(separator: " ").map { String($0) }
+        let components = raw.split(separator: " ").map { String($0) }
         
-        if !components.isEmpty { decodedParts.append("Station: \(components.removeFirst())") }
-        // ... rest of original METAR parsing logic
+        if !components.isEmpty {
+            // Simplified logic as the original was incomplete
+            decodedParts.append("Station: \(components.first ?? "N/A")")
+        }
         return decodedParts.joined(separator: "\n")
     }
 }

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		F40AE0C62DF7892600955853 /* PersistenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40AE0C52DF7892600955853 /* PersistenceService.swift */; };
 		F448983F2DF75840003DBF3C /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = F448983E2DF75840003DBF3C /* Constants.swift */; };
 		F44898412DF75859003DBF3C /* AppLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = F44898402DF75859003DBF3C /* AppLogger.swift */; };
 		F44898432DF7586F003DBF3C /* Data+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = F44898422DF7586F003DBF3C /* Data+Extensions.swift */; };
@@ -28,6 +29,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		F40AE0C52DF7892600955853 /* PersistenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistenceService.swift; sourceTree = "<group>"; };
 		F42486872DF5357300DDE273 /* DronePal.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DronePal.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F448983E2DF75840003DBF3C /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
 		F44898402DF75859003DBF3C /* AppLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogger.swift; sourceTree = "<group>"; };
@@ -49,9 +51,22 @@
 		F448986E2DF75B89003DBF3C /* StatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		F40AE0C42DF7888F00955853 /* Exceptions for "DronePal" folder in "DronePal" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = F42486862DF5357300DDE273 /* DronePal */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		F42486892DF5357300DDE273 /* DronePal */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				F40AE0C42DF7888F00955853 /* Exceptions for "DronePal" folder in "DronePal" target */,
+			);
 			path = DronePal;
 			sourceTree = "<group>";
 		};
@@ -113,6 +128,7 @@
 			children = (
 				F44898462DF7589E003DBF3C /* ODIDParser.swift */,
 				F448984A2DF758C1003DBF3C /* BluetoothScanner.swift */,
+				F40AE0C52DF7892600955853 /* PersistenceService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -293,6 +309,7 @@
 				F44898532DF75943003DBF3C /* ContentView.swift in Sources */,
 				F448984B2DF758C1003DBF3C /* BluetoothScanner.swift in Sources */,
 				F448986C2DF75B6D003DBF3C /* ScannerViews.swift in Sources */,
+				F40AE0C62DF7892600955853 /* PersistenceService.swift in Sources */,
 				F44898642DF75B07003DBF3C /* EquipmentViews.swift in Sources */,
 				F448984D2DF758D6003DBF3C /* DomainModels.swift in Sources */,
 				F44898472DF7589E003DBF3C /* ODIDParser.swift in Sources */,
@@ -443,9 +460,10 @@
 				DEVELOPMENT_TEAM = 824KUMV8Y2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "\"Bluetooth go burr\"";
-				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "\"We give your location to the NSA\"";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "\"DronePal needs your location to center the map for defining a flight area.\"";
+				INFOPLIST_FILE = DronePal/Info.plist;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "DronePal needs Bluetooth to detect other Remote ID enabled drones.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "DronePal needs your location to center the map for defining a flight area.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -473,9 +491,10 @@
 				DEVELOPMENT_TEAM = 824KUMV8Y2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "\"Bluetooth go burr\"";
-				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "\"We give your location to the NSA\"";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "\"DronePal needs your location to center the map for defining a flight area.\"";
+				INFOPLIST_FILE = DronePal/Info.plist;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "DronePal needs Bluetooth to detect other Remote ID enabled drones.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "DronePal needs your location to center the map for defining a flight area.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";

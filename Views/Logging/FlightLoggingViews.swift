@@ -321,7 +321,6 @@ struct FlightAreaMapView: View {
             ZStack(alignment: .bottom) {
                 MapReader { reader in
                     Map(position: $position) {
-                        // <-- FIXED: Explicitly add the user annotation to show the blue dot
                         UserAnnotation()
                         
                         if !drawnPoints.isEmpty {
@@ -390,7 +389,6 @@ struct FlightAreaMapView: View {
     private var bottomControlsView: some View {
         VStack {
             HStack {
-                // <-- FIXED: Replaced icon with a more common one to prevent crashes
                 Button("Clear", systemImage: "trash") { drawnPoints.removeAll() }
                     .buttonStyle(.bordered)
                     .tint(.red)
@@ -408,7 +406,6 @@ struct FlightAreaMapView: View {
             Form {
                 Section("Operation Details") {
                     HStack {
-                        // <-- MODIFIED: Changed AGL units to feet
                         Text("Maximum AGL (feet)")
                         TextField("e.g., 400", text: $maxAGLText)
                             .keyboardType(.decimalPad)
@@ -437,8 +434,8 @@ struct FlightAreaMapView: View {
             self.drawnPoints = area.boundary.map { $0.clLocationCoordinate2D }
             self.maxAGLText = String(area.maxAGL)
             
-            if !drawnPoints.isEmpty {
-                let region = MKCoordinateRegion(coordinates: drawnPoints)
+            // <-- FIX: Check that drawnPoints is not empty before creating region
+            if !drawnPoints.isEmpty, let region = MKCoordinateRegion(coordinates: drawnPoints) {
                 self.position = .region(region)
             }
         }
@@ -481,7 +478,9 @@ struct FlightAreaMapView: View {
     }
     
     private func calculateCenter(of coordinates: [CLLocationCoordinate2D]) -> CLLocationCoordinate2D? {
+        // <-- FIX: Handle empty array to prevent division by zero (NaN)
         guard !coordinates.isEmpty else { return nil }
+        
         let avgLat = coordinates.reduce(0) { $0 + $1.latitude } / Double(coordinates.count)
         let avgLon = coordinates.reduce(0) { $0 + $1.longitude } / Double(coordinates.count)
         return CLLocationCoordinate2D(latitude: avgLat, longitude: avgLon)
@@ -490,8 +489,10 @@ struct FlightAreaMapView: View {
 
 // Helper to create a map region that fits all coordinates.
 extension MKCoordinateRegion {
-    init(coordinates: [CLLocationCoordinate2D]) {
-        guard !coordinates.isEmpty else { self.init(); return }
+    // <-- FIX: Make this initializer failable to handle the empty coordinates case
+    init?(coordinates: [CLLocationCoordinate2D]) {
+        // <-- FIX: Handle empty array to prevent division by zero (NaN)
+        guard !coordinates.isEmpty else { return nil }
 
         var minLat = coordinates[0].latitude, maxLat = coordinates[0].latitude
         var minLon = coordinates[0].longitude, maxLon = coordinates[0].longitude

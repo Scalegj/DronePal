@@ -133,23 +133,23 @@ struct FlightDetailView: View {
                 InfoRow(label: "Pilot in Command", value: log.pilotInCommand)
             }
 
-            // <-- ADDED: Section to display the saved flight area map and AGL
             if let flightArea = log.flightArea, !flightArea.boundary.isEmpty {
                 Section("Flight Area") {
-                    let region = MKCoordinateRegion(coordinates: flightArea.boundary.map { $0.clLocationCoordinate2D })
-                    
-                    Map(initialPosition: .region(region)) {
-                        let coordinates = flightArea.boundary.map { $0.clLocationCoordinate2D }
-                        MapPolygon(coordinates: coordinates)
-                            .foregroundStyle(.blue.opacity(0.3))
-                        MapPolygon(coordinates: coordinates)
-                            .stroke(.blue, lineWidth: 2)
-                    }
-                    .frame(height: 250)
-                    .listRowInsets(EdgeInsets())
-                    .allowsHitTesting(false)
+                    // <-- FIX: Safely unwrap the failable initializer.
+                    if let region = MKCoordinateRegion(coordinates: flightArea.boundary.map { $0.clLocationCoordinate2D }) {
+                        Map(initialPosition: .region(region)) {
+                            let coordinates = flightArea.boundary.map { $0.clLocationCoordinate2D }
+                            MapPolygon(coordinates: coordinates)
+                                .foregroundStyle(.blue.opacity(0.3))
+                            MapPolygon(coordinates: coordinates)
+                                .stroke(.blue, lineWidth: 2)
+                        }
+                        .frame(height: 250)
+                        .listRowInsets(EdgeInsets())
+                        .allowsHitTesting(false)
 
-                    InfoRow(label: "Max AGL", value: "\(Int(flightArea.maxAGL)) ft")
+                        InfoRow(label: "Max AGL", value: "\(Int(flightArea.maxAGL)) ft")
+                    }
                 }
             }
 
