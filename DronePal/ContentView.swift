@@ -4,23 +4,23 @@ import Combine
 
 // MARK: - Helper Extensions
 extension Data {
-    func toUInt16(at offset: Int) -> UInt16 {
+    func toUInt16(at offset: Int) -> UInt16 { // Corrected from UInt116
         let subdata = self.subdata(in: offset..<(offset+2))
         return subdata.withUnsafeBytes { $0.load(as: UInt16.self) }
     }
-    
+
     func toInt32(at offset: Int) -> Int32 {
         let subdata = self.subdata(in: offset..<(offset+4))
         return subdata.withUnsafeBytes { $0.load(as: Int32.self) }
     }
-    
+
     func toFloat16(at offset: Int) -> Float {
         let uint16 = self.toUInt16(at: offset)
-        
+
         let sign = (uint16 & 0x8000) >> 15
         let exponent = (uint16 & 0x7C00) >> 10
         let fraction = uint16 & 0x03FF
-        
+
         let floatSign: UInt32 = UInt32(sign) << 31
         var floatExponent: UInt32
         var floatFraction: UInt32
@@ -68,6 +68,24 @@ extension Binding {
 
 // MARK: - Models
 
+struct Checklist: Identifiable, Codable, Hashable {
+    let id: UUID
+    var name: String
+    var items: [ChecklistItem]
+}
+
+struct ChecklistItem: Identifiable, Codable, Hashable {
+    let id: UUID
+    var text: String
+}
+
+struct CompletedChecklistItem: Identifiable, Codable, Hashable {
+    let id: UUID // Corresponds to ChecklistItem's ID
+    var text: String
+    var isChecked: Bool
+    var completionDate: Date? // New property to store the timestamp
+}
+
 struct FlightLog: Identifiable, Codable {
     let id: UUID
     var date: Date
@@ -80,8 +98,10 @@ struct FlightLog: Identifiable, Codable {
     var pmtcBy: String?
     var visualObserver: String?
     var loggedRemoteIDs: [LoggedRemoteID]?
-    
-    init(id: UUID = UUID(), date: Date = Date(), aircraftID: UUID? = nil, location: String = "", pilotInCommand: String = "", flightDuration: TimeInterval = 0, missionNotes: String = "", weather: WeatherData = WeatherData(), pmtcBy: String? = nil, visualObserver: String? = nil, loggedRemoteIDs: [LoggedRemoteID]? = nil) {
+    var completedChecklist: [CompletedChecklistItem] // Changed: No longer optional
+
+    // Update the initializer with a default value
+    init(id: UUID = UUID(), date: Date = Date(), aircraftID: UUID? = nil, location: String = "", pilotInCommand: String = "", flightDuration: TimeInterval = 0, missionNotes: String = "", weather: WeatherData = WeatherData(), pmtcBy: String? = nil, visualObserver: String? = nil, loggedRemoteIDs: [LoggedRemoteID]? = nil, completedChecklist: [CompletedChecklistItem] = []) {
         self.id = id
         self.date = date
         self.aircraftID = aircraftID
@@ -93,6 +113,7 @@ struct FlightLog: Identifiable, Codable {
         self.pmtcBy = pmtcBy
         self.visualObserver = visualObserver
         self.loggedRemoteIDs = loggedRemoteIDs
+        self.completedChecklist = completedChecklist // Assign the value
     }
 }
 
@@ -313,6 +334,7 @@ class AppViewModel: ObservableObject {
     @Published var timer: Timer?
     @Published var telemetryTimer: Timer?
     @Published var drones: [Drone] = []
+    @Published var checklists: [Checklist] = [] // New Property
     
     @Published var initialCertificateDate: Date {
         didSet { UserDefaults.standard.set(initialCertificateDate, forKey: certificateDateKey) }
@@ -323,16 +345,18 @@ class AppViewModel: ObservableObject {
     
     private var cancellables = Set<AnyCancellable>()
     
-    private let logbookStorageKey = "Part107Logbook_Logs_v9"
-    private let droneStorageKey = "Part107Logbook_Drones_v9"
-    private let certificateDateKey = "Part107Logbook_CertDate_v9"
-    private let recurrencyDateKey = "Part107Logbook_RecurrencyDate_v9"
+    private let logbookStorageKey = "Part107Logbook_Logs_v10"
+    private let droneStorageKey = "Part107Logbook_Drones_v10"
+    private let checklistStorageKey = "Part107Logbook_Checklists_v10" // New Key
+    private let certificateDateKey = "Part107Logbook_CertDate_v10"
+    private let recurrencyDateKey = "Part107Logbook_RecurrencyDate_v10"
 
     init() {
         self.initialCertificateDate = UserDefaults.standard.object(forKey: certificateDateKey) as? Date ?? Date()
         self.lastRecurrencyDate = UserDefaults.standard.object(forKey: recurrencyDateKey) as? Date ?? Date()
         loadLogs()
         loadDrones()
+        loadChecklists() // New Load
         
         bluetoothScanner.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
@@ -344,6 +368,12 @@ class AppViewModel: ObservableObject {
         activeLog.loggedRemoteIDs = []
         if let firstDrone = drones.first {
             activeLog.aircraftID = firstDrone.id
+        }
+        // Set a default checklist if one exists
+        if let firstChecklist = checklists.first {
+            activeLog.completedChecklist = firstChecklist.items.map {
+                CompletedChecklistItem(id: $0.id, text: $0.text, isChecked: false)
+            }
         }
         bluetoothScanner.startScanning()
         isLoggingFlight = true
@@ -495,6 +525,39 @@ class AppViewModel: ObservableObject {
         }
     }
     
+    // MARK: Checklist Functions (New)
+    func saveChecklist(_ checklist: Checklist) {
+        if let index = checklists.firstIndex(where: { $0.id == checklist.id }) {
+            checklists[index] = checklist
+        } else {
+            checklists.append(checklist)
+        }
+        saveChecklists()
+    }
+    
+    func deleteChecklist(at offsets: IndexSet) {
+        checklists.remove(atOffsets: offsets)
+        saveChecklists()
+    }
+    
+    func loadChecklists() {
+        guard let data = UserDefaults.standard.data(forKey: checklistStorageKey) else { return }
+        do {
+            checklists = try JSONDecoder().decode([Checklist].self, from: data)
+        } catch {
+            print("Error loading checklists: \(error.localizedDescription)")
+        }
+    }
+    
+    private func saveChecklists() {
+        do {
+            let data = try JSONEncoder().encode(checklists)
+            UserDefaults.standard.set(data, forKey: checklistStorageKey)
+        } catch {
+            print("Error saving checklists: \(error.localizedDescription)")
+        }
+    }
+    
     func fetchWeather() {
         guard !activeLog.weather.icao.isEmpty else { return }
         let icao = activeLog.weather.icao.uppercased()
@@ -613,7 +676,10 @@ struct ContentView: View {
             
             NavigationStack { EquipmentListView() }
                 .tabItem { Label("Equipment", systemImage: "airplane.circle.fill") }
-            
+
+            NavigationStack { ChecklistListView() } // New Tab
+                .tabItem { Label("Checklists", systemImage: "checklist") }
+
             NavigationStack { RemoteIDScannerView() }
                 .tabItem { Label("Scanner", systemImage: "antenna.radiowaves.left.and.right") }
             
@@ -705,108 +771,214 @@ struct LoggedIDDetailView: View {
 struct FlightLoggingView: View {
     @EnvironmentObject var viewModel: AppViewModel
     @Binding var log: FlightLog
-    
+
     @State private var isUsingPMTC = false
     @State private var isUsingVO = false
-    
+    @State private var selectedChecklistID: UUID?
+
     var body: some View {
         NavigationView {
             Form {
-                Section("Live Flight Logging") {
-                    HStack {
-                        Text("Duration:")
-                        Spacer()
-                        Text(formatDuration(log.flightDuration))
-                            .font(.system(.title, design: .monospaced))
-                            .foregroundStyle(.tint)
-                    }
-                }
-                
-                Section("Detected Remote IDs") {
-                    if let loggedIDs = log.loggedRemoteIDs, !loggedIDs.isEmpty {
-                        ForEach(loggedIDs) { rid in
-                            NavigationLink(destination: LoggedIDDetailView(loggedID: rid)) {
-                                HStack {
-                                    VStack(alignment: .leading) {
-                                        Text(rid.basicID?.uasID ?? "ID Unavailable")
-                                            .font(.headline)
-                                        if let lastRecord = rid.telemetry.last {
-                                            Text("RSSI: \(lastRecord.rssi) dBm")
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                    }
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
-                                        .foregroundStyle(.tertiary)
-                                }
-                            }
-                        }
-                    } else {
-                        Text("Scanning for nearby drones...")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                
-                Section("Flight Details") {
-                    Picker("Aircraft", selection: $log.aircraftID) {
-                        ForEach(viewModel.drones) { drone in
-                            Text(drone.displayName).tag(drone.id as UUID?)
-                        }
-                    }
-                    TextField("Location (e.g., Park, City, State)", text: $log.location)
-                    TextField("Pilot in Command Name", text: $log.pilotInCommand)
-                }
-                
-                Section("Additional Crew") {
-                    Toggle("PMTC Performed?", isOn: $isUsingPMTC.animation())
-                    if isUsingPMTC {
-                        TextField("PMTC Performed By", text: Binding($log.pmtcBy, replacingNilWith: ""))
-                    }
-                    Toggle("Visual Observer Used?", isOn: $isUsingVO.animation())
-                    if isUsingVO {
-                        TextField("Visual Observer Name", text: Binding($log.visualObserver, replacingNilWith: ""))
-                    }
-                }
-                
-                Section("Mission Notes") {
-                    TextEditor(text: $log.missionNotes)
-                        .frame(minHeight: 100)
-                }
-                
-                Section("Weather") {
-                    HStack {
-                        TextField("Airport ICAO Code", text: $log.weather.icao)
-                            .autocapitalization(.allCharacters)
-                            .disableAutocorrection(true)
-                            .font(.system(.body, design: .monospaced))
-                        
-                        Button("Fetch", action: viewModel.fetchWeather)
-                            .disabled(log.weather.icao.count != 4)
-                    }
-                    
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("Raw METAR").font(.caption).foregroundStyle(.secondary)
-                        Text(log.weather.metar)
-                    }
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("Decoded METAR").font(.caption).foregroundStyle(.secondary)
-                        Text(log.weather.decodedMetar)
-                    }.padding(.top, 5)
-
-                }
+                liveLoggingSection
+                remoteIDSection
+                checklistSection
+                flightDetailsSection
+                additionalCrewSection
+                missionNotesSection
+                weatherSection
             }
             .navigationTitle("New Flight")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") {
-                    viewModel.bluetoothScanner.stopScanning()
-                    viewModel.isLoggingFlight = false
-                } }
-                ToolbarItem(placement: .confirmationAction) { Button("Save & End Flight", action: viewModel.stopLogging) }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        viewModel.bluetoothScanner.stopScanning()
+                        viewModel.isLoggingFlight = false
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save & End Flight", action: viewModel.stopLogging)
+                }
+            }
+            .onAppear {
+                if let firstItem = log.completedChecklist.first,
+                   let checklist = viewModel.checklists.first(where: { $0.items.contains(where: { $0.id == firstItem.id }) }) {
+                    selectedChecklistID = checklist.id
+                }
+            }
+        }
+    }
+
+    // MARK: - Refactored View Sections
+
+    private var liveLoggingSection: some View {
+        Section("Live Flight Logging") {
+            HStack {
+                Text("Duration:")
+                Spacer()
+                Text(formatDuration(log.flightDuration))
+                    .font(.system(.title, design: .monospaced))
+                    .foregroundStyle(.tint)
+            }
+        }
+    }
+
+    private var remoteIDSection: some View {
+        Section("Detected Remote IDs") {
+            if let loggedIDs = log.loggedRemoteIDs, !loggedIDs.isEmpty {
+                ForEach(loggedIDs) { rid in
+                    NavigationLink(destination: LoggedIDDetailView(loggedID: rid)) {
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(rid.basicID?.uasID ?? "ID Unavailable")
+                                    .font(.headline)
+                                if let lastRecord = rid.telemetry.last {
+                                    Text("RSSI: \(lastRecord.rssi) dBm")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+            } else {
+                Text("Scanning for nearby drones...")
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var checklistSection: some View {
+        Section("Pre-flight Checklist") {
+            if viewModel.checklists.isEmpty {
+                Text("No checklists available. Add one from the Checklists tab.")
+                    .foregroundStyle(.secondary)
+            } else {
+                checklistPicker
+                completedItemsList
             }
         }
     }
     
+    private var checklistPicker: some View {
+        Picker("Select Checklist", selection: $selectedChecklistID) {
+            Text("None").tag(nil as UUID?)
+            ForEach(viewModel.checklists) { checklist in
+                Text(checklist.name).tag(checklist.id as UUID?)
+            }
+        }
+        .onChange(of: selectedChecklistID) { _, newValue in
+            updateCompletedChecklist(for: newValue)
+        }
+    }
+
+    private var completedItemsList: some View {
+        ForEach($log.completedChecklist) { $item in
+            Button(action: {
+                // Toggle the checked state
+                $item.isChecked.wrappedValue.toggle()
+                
+                // Set or clear the timestamp based on the new state
+                if $item.isChecked.wrappedValue {
+                    $item.completionDate.wrappedValue = Date()
+                } else {
+                    $item.completionDate.wrappedValue = nil
+                }
+            }) {
+                HStack {
+                    Image(systemName: item.isChecked ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(item.isChecked ? .green : .secondary)
+                    
+                    Text(item.text)
+                        .strikethrough(item.isChecked)
+                        .foregroundStyle(item.isChecked ? .secondary : .primary)
+                    
+                    Spacer()
+                    
+                    // Display the timestamp if it exists
+                    if let completionDate = item.completionDate {
+                        Text(completionDate, style: .time)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .contentShape(Rectangle()) // Makes the whole row tappable
+            }
+            .buttonStyle(PlainButtonStyle()) // Keeps the text color from turning blue
+        }
+    }
+
+    private var flightDetailsSection: some View {
+        Section("Flight Details") {
+            Picker("Aircraft", selection: $log.aircraftID) {
+                ForEach(viewModel.drones) { drone in
+                    Text(drone.displayName).tag(drone.id as UUID?)
+                }
+            }
+            TextField("Location (e.g., Park, City, State)", text: $log.location)
+            TextField("Pilot in Command Name", text: $log.pilotInCommand)
+        }
+    }
+
+    private var additionalCrewSection: some View {
+        Section("Additional Crew") {
+            Toggle("PMTC Performed?", isOn: $isUsingPMTC.animation())
+            if isUsingPMTC {
+                TextField("PMTC Performed By", text: Binding($log.pmtcBy, replacingNilWith: ""))
+            }
+            Toggle("Visual Observer Used?", isOn: $isUsingVO.animation())
+            if isUsingVO {
+                TextField("Visual Observer Name", text: Binding($log.visualObserver, replacingNilWith: ""))
+            }
+        }
+    }
+
+    private var missionNotesSection: some View {
+        Section("Mission Notes") {
+            TextEditor(text: $log.missionNotes)
+                .frame(minHeight: 100)
+        }
+    }
+
+    private var weatherSection: some View {
+        Section("Weather") {
+            HStack {
+                TextField("Airport ICAO Code", text: $log.weather.icao)
+                    .autocapitalization(.allCharacters)
+                    .disableAutocorrection(true)
+                    .font(.system(.body, design: .monospaced))
+
+                Button("Fetch", action: viewModel.fetchWeather)
+                    .disabled(log.weather.icao.count != 4)
+            }
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Raw METAR").font(.caption).foregroundStyle(.secondary)
+                Text(log.weather.metar)
+            }
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Decoded METAR").font(.caption).foregroundStyle(.secondary)
+                Text(log.weather.decodedMetar)
+            }.padding(.top, 5)
+        }
+    }
+
+    // MARK: - Helper Functions
+
+    private func updateCompletedChecklist(for checklistId: UUID?) {
+        guard let id = checklistId, let checklist = viewModel.checklists.first(where: { $0.id == id }) else {
+            log.completedChecklist = []
+            return
+        }
+
+        log.completedChecklist = checklist.items.map {
+            // Ensure completionDate is nil initially
+            CompletedChecklistItem(id: $0.id, text: $0.text, isChecked: false, completionDate: nil)
+        }
+    }
+
     private func formatDuration(_ duration: TimeInterval) -> String {
         let formatter = DateComponentsFormatter()
         formatter.allowedUnits = [.hour, .minute, .second]
@@ -837,6 +1009,29 @@ struct FlightDetailView: View {
                 }
             }
             
+            if !log.completedChecklist.isEmpty {
+                Section("Pre-flight Checklist") {
+                    ForEach(log.completedChecklist) { item in
+                        HStack {
+                            Image(systemName: item.isChecked ? "checkmark.circle.fill" : "x.circle.fill")
+                                .foregroundStyle(item.isChecked ? .green : .red)
+                            
+                            Text(item.text)
+                                .strikethrough(item.isChecked)
+                            
+                            Spacer()
+                            
+                            // Display the saved timestamp
+                            if let completionDate = item.completionDate {
+                                Text(completionDate, style: .time)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+
             if let rids = log.loggedRemoteIDs, !rids.isEmpty {
                 Section("Detected Remote ID Telemetry") {
                     ForEach(rids) { rid in
@@ -1018,6 +1213,133 @@ struct DroneDetailView: View {
         }
         .sheet(isPresented: $showEditSheet) {
             AddEditDroneView(droneToEdit: drone)
+        }
+    }
+}
+
+// MARK: Checklist Views (New)
+struct ChecklistListView: View {
+    @EnvironmentObject var viewModel: AppViewModel
+    @State private var showAddChecklistSheet = false
+    
+    var body: some View {
+        Group {
+            if viewModel.checklists.isEmpty {
+                ContentUnavailableView(
+                    "No Checklists",
+                    systemImage: "checklist",
+                    description: Text("Tap the + button to create your first pre-flight checklist.")
+                )
+            } else {
+                List {
+                    ForEach(viewModel.checklists) { checklist in
+                        NavigationLink(destination: ChecklistDetailView(checklist: checklist)) {
+                            VStack(alignment: .leading) {
+                                Text(checklist.name).font(.headline)
+                                Text("\(checklist.items.count) items").font(.caption).foregroundStyle(.secondary)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                    .onDelete(perform: viewModel.deleteChecklist)
+                }
+            }
+        }
+        .navigationTitle("Pre-flight Checklists")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: { showAddChecklistSheet.toggle() }) {
+                    Image(systemName: "plus.circle.fill").font(.title)
+                }
+            }
+        }
+        .sheet(isPresented: $showAddChecklistSheet) {
+            AddEditChecklistView(checklistToEdit: nil)
+        }
+    }
+}
+
+struct AddEditChecklistView: View {
+    @EnvironmentObject var viewModel: AppViewModel
+    @Environment(\.dismiss) var dismiss
+    
+    @State private var checklist: Checklist
+    let isEditing: Bool
+    
+    init(checklistToEdit: Checklist?) {
+        if let existingChecklist = checklistToEdit {
+            _checklist = State(initialValue: existingChecklist)
+            isEditing = true
+        } else {
+            _checklist = State(initialValue: Checklist(id: UUID(), name: "", items: []))
+            isEditing = false
+        }
+    }
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("Checklist Details") {
+                    TextField("Checklist Name", text: $checklist.name)
+                }
+                
+                Section("Checklist Items") {
+                    ForEach($checklist.items) { $item in
+                        TextField("Checklist item", text: $item.text)
+                    }
+                    .onDelete { offsets in
+                        checklist.items.remove(atOffsets: offsets)
+                    }
+                    
+                    Button("Add Item", systemImage: "plus") {
+                        let newItem = ChecklistItem(id: UUID(), text: "")
+                        checklist.items.append(newItem)
+                    }
+                }
+            }
+            .navigationTitle(isEditing ? "Edit Checklist" : "Add Checklist")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel", role: .cancel) { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        // Create a mutable copy to modify before saving
+                        var checklistToSave = checklist
+                        
+                        // Corrected: Remove items with empty or whitespace-only text before saving
+                        checklistToSave.items.removeAll { $0.text.trimmingCharacters(in: .whitespaces).isEmpty }
+                        
+                        viewModel.saveChecklist(checklistToSave)
+                        dismiss()
+                    }
+                    .disabled(checklist.name.isEmpty)
+                }
+            }
+        }
+    }
+}
+
+struct ChecklistDetailView: View {
+    let checklist: Checklist
+    @State private var showEditSheet = false
+    
+    var body: some View {
+        Form {
+            Section("Checklist Items") {
+                if checklist.items.isEmpty {
+                    Text("No items in this checklist.")
+                } else {
+                    ForEach(checklist.items) { item in
+                        Text(item.text)
+                    }
+                }
+            }
+        }
+        .navigationTitle(checklist.name)
+        .toolbar {
+            Button("Edit") { showEditSheet.toggle() }
+        }
+        .sheet(isPresented: $showEditSheet) {
+            AddEditChecklistView(checklistToEdit: checklist)
         }
     }
 }
