@@ -6,8 +6,47 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		F448983F2DF75840003DBF3C /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = F448983E2DF75840003DBF3C /* Constants.swift */; };
+		F44898412DF75859003DBF3C /* AppLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = F44898402DF75859003DBF3C /* AppLogger.swift */; };
+		F44898432DF7586F003DBF3C /* Data+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = F44898422DF7586F003DBF3C /* Data+Extensions.swift */; };
+		F44898452DF75886003DBF3C /* Binding+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = F44898442DF75886003DBF3C /* Binding+Extensions.swift */; };
+		F44898472DF7589E003DBF3C /* ODIDParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = F44898462DF7589E003DBF3C /* ODIDParser.swift */; };
+		F448984B2DF758C1003DBF3C /* BluetoothScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = F448984A2DF758C1003DBF3C /* BluetoothScanner.swift */; };
+		F448984D2DF758D6003DBF3C /* DomainModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F448984C2DF758D6003DBF3C /* DomainModels.swift */; };
+		F448984F2DF758EB003DBF3C /* AppViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F448984E2DF758EB003DBF3C /* AppViewModel.swift */; };
+		F44898512DF7592D003DBF3C /* SharedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F44898502DF7592D003DBF3C /* SharedViews.swift */; };
+		F44898532DF75943003DBF3C /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F44898522DF75943003DBF3C /* ContentView.swift */; };
+		F44898562DF75A62003DBF3C /* ReusableFormSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = F44898552DF75A62003DBF3C /* ReusableFormSections.swift */; };
+		F44898592DF75A7E003DBF3C /* SetupViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F44898582DF75A7E003DBF3C /* SetupViews.swift */; };
+		F448985E2DF75AB7003DBF3C /* LogbookViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F448985D2DF75AB7003DBF3C /* LogbookViews.swift */; };
+		F44898612DF75AE3003DBF3C /* FlightLoggingViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F44898602DF75AE3003DBF3C /* FlightLoggingViews.swift */; };
+		F44898642DF75B07003DBF3C /* EquipmentViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F44898632DF75B07003DBF3C /* EquipmentViews.swift */; };
+		F44898682DF75B43003DBF3C /* ChecklistViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F44898672DF75B43003DBF3C /* ChecklistViews.swift */; };
+		F448986C2DF75B6D003DBF3C /* ScannerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F448986B2DF75B6D003DBF3C /* ScannerViews.swift */; };
+		F448986F2DF75B89003DBF3C /* StatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F448986E2DF75B89003DBF3C /* StatsView.swift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		F42486872DF5357300DDE273 /* DronePal.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DronePal.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F448983E2DF75840003DBF3C /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
+		F44898402DF75859003DBF3C /* AppLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogger.swift; sourceTree = "<group>"; };
+		F44898422DF7586F003DBF3C /* Data+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Data+Extensions.swift"; sourceTree = "<group>"; };
+		F44898442DF75886003DBF3C /* Binding+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Binding+Extensions.swift"; sourceTree = "<group>"; };
+		F44898462DF7589E003DBF3C /* ODIDParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ODIDParser.swift; sourceTree = "<group>"; };
+		F448984A2DF758C1003DBF3C /* BluetoothScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BluetoothScanner.swift; sourceTree = "<group>"; };
+		F448984C2DF758D6003DBF3C /* DomainModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DomainModels.swift; sourceTree = "<group>"; };
+		F448984E2DF758EB003DBF3C /* AppViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppViewModel.swift; sourceTree = "<group>"; };
+		F44898502DF7592D003DBF3C /* SharedViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedViews.swift; sourceTree = "<group>"; };
+		F44898522DF75943003DBF3C /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		F44898552DF75A62003DBF3C /* ReusableFormSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReusableFormSections.swift; sourceTree = "<group>"; };
+		F44898582DF75A7E003DBF3C /* SetupViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupViews.swift; sourceTree = "<group>"; };
+		F448985D2DF75AB7003DBF3C /* LogbookViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogbookViews.swift; sourceTree = "<group>"; };
+		F44898602DF75AE3003DBF3C /* FlightLoggingViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlightLoggingViews.swift; sourceTree = "<group>"; };
+		F44898632DF75B07003DBF3C /* EquipmentViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EquipmentViews.swift; sourceTree = "<group>"; };
+		F44898672DF75B43003DBF3C /* ChecklistViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChecklistViews.swift; sourceTree = "<group>"; };
+		F448986B2DF75B6D003DBF3C /* ScannerViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScannerViews.swift; sourceTree = "<group>"; };
+		F448986E2DF75B89003DBF3C /* StatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -32,6 +71,12 @@
 		F424867E2DF5357300DDE273 = {
 			isa = PBXGroup;
 			children = (
+				F448983D2DF7581A003DBF3C /* Views */,
+				F448983C2DF757FC003DBF3C /* ViewModels */,
+				F448983B2DF757F3003DBF3C /* Models */,
+				F448983A2DF757ED003DBF3C /* Services */,
+				F44898392DF757E6003DBF3C /* Extensions */,
+				F44898382DF757DC003DBF3C /* Utilities */,
 				F42486892DF5357300DDE273 /* DronePal */,
 				F42486882DF5357300DDE273 /* Products */,
 			);
@@ -43,6 +88,130 @@
 				F42486872DF5357300DDE273 /* DronePal.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		F44898382DF757DC003DBF3C /* Utilities */ = {
+			isa = PBXGroup;
+			children = (
+				F448983E2DF75840003DBF3C /* Constants.swift */,
+				F44898402DF75859003DBF3C /* AppLogger.swift */,
+			);
+			path = Utilities;
+			sourceTree = "<group>";
+		};
+		F44898392DF757E6003DBF3C /* Extensions */ = {
+			isa = PBXGroup;
+			children = (
+				F44898422DF7586F003DBF3C /* Data+Extensions.swift */,
+				F44898442DF75886003DBF3C /* Binding+Extensions.swift */,
+			);
+			path = Extensions;
+			sourceTree = "<group>";
+		};
+		F448983A2DF757ED003DBF3C /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				F44898462DF7589E003DBF3C /* ODIDParser.swift */,
+				F448984A2DF758C1003DBF3C /* BluetoothScanner.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		F448983B2DF757F3003DBF3C /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				F448984C2DF758D6003DBF3C /* DomainModels.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		F448983C2DF757FC003DBF3C /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				F448984E2DF758EB003DBF3C /* AppViewModel.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		F448983D2DF7581A003DBF3C /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				F448986D2DF75B81003DBF3C /* Stats */,
+				F44898692DF75B52003DBF3C /* Scanner */,
+				F44898662DF75B34003DBF3C /* Checklists */,
+				F44898622DF75AF7003DBF3C /* Equipment */,
+				F448985F2DF75ACA003DBF3C /* Logging */,
+				F448985A2DF75A94003DBF3C /* Logbook */,
+				F44898572DF75A72003DBF3C /* Setup */,
+				F44898542DF75A4F003DBF3C /* Shared */,
+				F44898502DF7592D003DBF3C /* SharedViews.swift */,
+				F44898522DF75943003DBF3C /* ContentView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		F44898542DF75A4F003DBF3C /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				F44898552DF75A62003DBF3C /* ReusableFormSections.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		F44898572DF75A72003DBF3C /* Setup */ = {
+			isa = PBXGroup;
+			children = (
+				F44898582DF75A7E003DBF3C /* SetupViews.swift */,
+			);
+			path = Setup;
+			sourceTree = "<group>";
+		};
+		F448985A2DF75A94003DBF3C /* Logbook */ = {
+			isa = PBXGroup;
+			children = (
+				F448985D2DF75AB7003DBF3C /* LogbookViews.swift */,
+			);
+			path = Logbook;
+			sourceTree = "<group>";
+		};
+		F448985F2DF75ACA003DBF3C /* Logging */ = {
+			isa = PBXGroup;
+			children = (
+				F44898602DF75AE3003DBF3C /* FlightLoggingViews.swift */,
+			);
+			path = Logging;
+			sourceTree = "<group>";
+		};
+		F44898622DF75AF7003DBF3C /* Equipment */ = {
+			isa = PBXGroup;
+			children = (
+				F44898632DF75B07003DBF3C /* EquipmentViews.swift */,
+			);
+			path = Equipment;
+			sourceTree = "<group>";
+		};
+		F44898662DF75B34003DBF3C /* Checklists */ = {
+			isa = PBXGroup;
+			children = (
+				F44898672DF75B43003DBF3C /* ChecklistViews.swift */,
+			);
+			path = Checklists;
+			sourceTree = "<group>";
+		};
+		F44898692DF75B52003DBF3C /* Scanner */ = {
+			isa = PBXGroup;
+			children = (
+				F448986B2DF75B6D003DBF3C /* ScannerViews.swift */,
+			);
+			path = Scanner;
+			sourceTree = "<group>";
+		};
+		F448986D2DF75B81003DBF3C /* Stats */ = {
+			isa = PBXGroup;
+			children = (
+				F448986E2DF75B89003DBF3C /* StatsView.swift */,
+			);
+			path = Stats;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -119,6 +288,24 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F44898562DF75A62003DBF3C /* ReusableFormSections.swift in Sources */,
+				F448984F2DF758EB003DBF3C /* AppViewModel.swift in Sources */,
+				F44898532DF75943003DBF3C /* ContentView.swift in Sources */,
+				F448984B2DF758C1003DBF3C /* BluetoothScanner.swift in Sources */,
+				F448986C2DF75B6D003DBF3C /* ScannerViews.swift in Sources */,
+				F44898642DF75B07003DBF3C /* EquipmentViews.swift in Sources */,
+				F448984D2DF758D6003DBF3C /* DomainModels.swift in Sources */,
+				F44898472DF7589E003DBF3C /* ODIDParser.swift in Sources */,
+				F44898512DF7592D003DBF3C /* SharedViews.swift in Sources */,
+				F448985E2DF75AB7003DBF3C /* LogbookViews.swift in Sources */,
+				F448983F2DF75840003DBF3C /* Constants.swift in Sources */,
+				F44898452DF75886003DBF3C /* Binding+Extensions.swift in Sources */,
+				F44898612DF75AE3003DBF3C /* FlightLoggingViews.swift in Sources */,
+				F448986F2DF75B89003DBF3C /* StatsView.swift in Sources */,
+				F44898682DF75B43003DBF3C /* ChecklistViews.swift in Sources */,
+				F44898412DF75859003DBF3C /* AppLogger.swift in Sources */,
+				F44898592DF75A7E003DBF3C /* SetupViews.swift in Sources */,
+				F44898432DF7586F003DBF3C /* Data+Extensions.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
