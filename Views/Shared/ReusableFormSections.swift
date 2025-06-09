@@ -13,7 +13,18 @@ struct FlightDetailsSection: View {
                     Text(drone.displayName).tag(drone.id as UUID?)
                 }
             }
-            TextField("Location", text: $log.location)
+            
+            // <-- MODIFIED: Changed TextField to a NavigationLink to the map view
+            NavigationLink(destination: FlightAreaMapView(log: $log)) {
+                HStack {
+                    Text("Location")
+                    Spacer()
+                    Text(log.location.isEmpty ? "Set Flight Area" : log.location)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.trailing)
+                }
+            }
+            
             TextField("Pilot in Command", text: $log.pilotInCommand)
         }
     }

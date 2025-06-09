@@ -1,4 +1,33 @@
 import SwiftUI
+import MapKit
+import CoreLocation
+
+// MARK: - Location Manager
+class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
+    private let manager = CLLocationManager()
+    @Published var userLocation: CLLocation?
+
+    override init() {
+        super.init()
+        manager.delegate = self
+    }
+
+    func requestLocation() {
+        manager.requestWhenInUseAuthorization()
+        manager.requestLocation()
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        DispatchQueue.main.async {
+            self.userLocation = locations.first
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        print("Failed to get user location: \(error.localizedDescription)")
+    }
+}
+
 
 /// The main container view for the flight logging flow, managing the multi-step process.
 struct FlightLoggingContainerView: View {
@@ -84,7 +113,6 @@ private struct PreFlightSetupView: View {
                     Text("None").tag(nil as UUID?)
                     ForEach(viewModel.checklists) { Text($0.name).tag($0.id as UUID?) }
                 }
-                // <-- FIXED: Updated to modern onChange syntax.
                 .onChange(of: selectedChecklistID) {
                     updateCompletedChecklist(for: selectedChecklistID)
                 }
@@ -270,5 +298,213 @@ private struct PostFlightReviewView: View {
              isUsingPMTC = !(log.pmtcBy?.isEmpty ?? true)
              isUsingVO = !(log.visualObserver?.isEmpty ?? true)
         }
+    }
+}
+
+
+// MARK: - Flight Area Map View
+struct FlightAreaMapView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Binding var log: FlightLog
+
+    @StateObject private var locationManager = LocationManager()
+    @State private var position: MapCameraPosition = .automatic
+    @State private var initialLocationSet = false
+    
+    @State private var drawnPoints: [CLLocationCoordinate2D] = []
+    @State private var maxAGLText: String = ""
+    
+    @State private var isSaving = false
+    
+    var body: some View {
+        NavigationStack {
+            ZStack(alignment: .bottom) {
+                MapReader { reader in
+                    Map(position: $position) {
+                        // <-- FIXED: Explicitly add the user annotation to show the blue dot
+                        UserAnnotation()
+                        
+                        if !drawnPoints.isEmpty {
+                            MapPolygon(coordinates: drawnPoints)
+                                .foregroundStyle(.blue.opacity(0.3))
+                            MapPolygon(coordinates: drawnPoints)
+                                .stroke(.blue, lineWidth: 2)
+                        }
+                        
+                        ForEach(Array(drawnPoints.enumerated()), id: \.offset) { index, point in
+                             Annotation("Point \(index + 1)", coordinate: point) {
+                                Image(systemName: "\(index + 1).circle.fill")
+                                    .font(.title2)
+                                    .foregroundStyle(.white, .blue)
+                                    .shadow(radius: 2)
+                            }
+                        }
+                    }
+                    .onTapGesture { screenPoint in
+                        if let location = reader.convert(screenPoint, from: .local) {
+                            drawnPoints.append(location)
+                        }
+                    }
+                }
+                .ignoresSafeArea(edges: .bottom)
+
+                VStack {
+                    HStack {
+                        Spacer()
+                        MapUserLocationButton()
+                        MapPitchToggle()
+                    }
+                    .padding()
+                    .buttonStyle(.borderedProminent)
+
+                    Spacer()
+                    bottomControlsView
+                }
+            }
+            .navigationTitle("Define Flight Area")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(action: saveAndDismiss) {
+                        if isSaving { ProgressView() } else { Text("Save") }
+                    }
+                    .disabled(drawnPoints.count < 3 || isSaving)
+                }
+            }
+            .onAppear(perform: onAppear)
+            .onReceive(locationManager.$userLocation) { location in
+                if let location, !initialLocationSet {
+                    if log.flightArea == nil {
+                        position = .region(MKCoordinateRegion(
+                            center: location.coordinate,
+                            span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+                        ))
+                        initialLocationSet = true
+                    }
+                }
+            }
+        }
+    }
+
+    private var bottomControlsView: some View {
+        VStack {
+            HStack {
+                // <-- FIXED: Replaced icon with a more common one to prevent crashes
+                Button("Clear", systemImage: "trash") { drawnPoints.removeAll() }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
+                
+                Spacer()
+                
+                Button("Undo", systemImage: "arrow.uturn.backward") {
+                    if !drawnPoints.isEmpty { drawnPoints.removeLast() }
+                }
+                .buttonStyle(.bordered)
+                .disabled(drawnPoints.isEmpty)
+            }
+            .padding([.horizontal, .top])
+            
+            Form {
+                Section("Operation Details") {
+                    HStack {
+                        // <-- MODIFIED: Changed AGL units to feet
+                        Text("Maximum AGL (feet)")
+                        TextField("e.g., 400", text: $maxAGLText)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                    }
+                }
+            }
+            .frame(height: 110)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .padding(.horizontal)
+        }
+        .background(.thinMaterial)
+    }
+    
+    private func onAppear() {
+        setupFromLog()
+        if log.flightArea == nil {
+            locationManager.requestLocation()
+        } else {
+            initialLocationSet = true
+        }
+    }
+    
+    private func setupFromLog() {
+        if let area = log.flightArea {
+            self.drawnPoints = area.boundary.map { $0.clLocationCoordinate2D }
+            self.maxAGLText = String(area.maxAGL)
+            
+            if !drawnPoints.isEmpty {
+                let region = MKCoordinateRegion(coordinates: drawnPoints)
+                self.position = .region(region)
+            }
+        }
+    }
+    
+    private func saveAndDismiss() {
+        guard !isSaving else { return }
+        isSaving = true
+        
+        let center = calculateCenter(of: drawnPoints)
+        guard let validCenter = center else {
+            isSaving = false; return
+        }
+        
+        let geocoder = CLGeocoder()
+        geocoder.reverseGeocodeLocation(CLLocation(latitude: validCenter.latitude, longitude: validCenter.longitude)) { placemarks, error in
+            
+            let locationString: String
+            if let placemark = placemarks?.first {
+                locationString = [placemark.name, placemark.locality, placemark.administrativeArea]
+                    .compactMap { $0 }
+                    .joined(separator: ", ")
+            } else {
+                locationString = String(format: "Area near %.4f, %.4f", validCenter.latitude, validCenter.longitude)
+            }
+            
+            let codableCoords = drawnPoints.map { CodableCoordinate(latitude: $0.latitude, longitude: $0.longitude) }
+            
+            let newFlightArea = FlightArea(
+                boundary: codableCoords,
+                maxAGL: Double(maxAGLText) ?? 0.0
+            )
+            
+            log.flightArea = newFlightArea
+            log.location = locationString
+            
+            isSaving = false
+            dismiss()
+        }
+    }
+    
+    private func calculateCenter(of coordinates: [CLLocationCoordinate2D]) -> CLLocationCoordinate2D? {
+        guard !coordinates.isEmpty else { return nil }
+        let avgLat = coordinates.reduce(0) { $0 + $1.latitude } / Double(coordinates.count)
+        let avgLon = coordinates.reduce(0) { $0 + $1.longitude } / Double(coordinates.count)
+        return CLLocationCoordinate2D(latitude: avgLat, longitude: avgLon)
+    }
+}
+
+// Helper to create a map region that fits all coordinates.
+extension MKCoordinateRegion {
+    init(coordinates: [CLLocationCoordinate2D]) {
+        guard !coordinates.isEmpty else { self.init(); return }
+
+        var minLat = coordinates[0].latitude, maxLat = coordinates[0].latitude
+        var minLon = coordinates[0].longitude, maxLon = coordinates[0].longitude
+
+        for coordinate in coordinates {
+            minLat = min(minLat, coordinate.latitude)
+            maxLat = max(maxLat, coordinate.latitude)
+            minLon = min(minLon, coordinate.longitude)
+            maxLon = max(maxLon, coordinate.longitude)
+        }
+
+        let center = CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2, longitude: (minLon + maxLon) / 2)
+        let span = MKCoordinateSpan(latitudeDelta: (maxLat - minLat) * 1.4, longitudeDelta: (maxLon - minLon) * 1.4)
+        self.init(center: center, span: span)
     }
 }

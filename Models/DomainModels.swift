@@ -1,5 +1,27 @@
 import Foundation
 import CoreBluetooth
+import CoreLocation
+
+// MARK: - Custom Codable Coordinate
+// A codable struct to allow storing CLLocationCoordinate2D in UserDefaults
+struct CodableCoordinate: Codable, Hashable {
+    var latitude: Double
+    var longitude: Double
+
+    // Helper to convert to a CoreLocation coordinate
+    var clLocationCoordinate2D: CLLocationCoordinate2D {
+        CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
+}
+
+// MARK: - Flight Area Model
+// A struct to hold the defined flight area details
+struct FlightArea: Codable, Hashable {
+    var boundary: [CodableCoordinate] // For the drawn polygon
+    // <-- MODIFIED: Removed radius property
+    var maxAGL: Double // User-defined max altitude in meters
+}
+
 
 // MARK: - Device & Bluetooth Models
 
@@ -74,14 +96,14 @@ struct FlightLog: Identifiable, Codable {
     var loggedRemoteIDs: [LoggedRemoteID]
     var completedChecklist: [CompletedChecklistItem]
     var segments: [FlightSegment]
-    var trashedDate: Date? // <-- ADDED: To mark a log as in the trash
+    var flightArea: FlightArea?
+    var trashedDate: Date?
 
     var flightDuration: TimeInterval {
         segments.reduce(0) { $0 + $1.duration }
     }
-
-    // <-- ADDED: New initializer to accommodate the new property
-    init(id: UUID = UUID(), date: Date = Date(), aircraftID: UUID? = nil, location: String = "", pilotInCommand: String = "", missionNotes: String = "", weather: WeatherData = WeatherData(), pmtcBy: String? = nil, visualObserver: String? = nil, loggedRemoteIDs: [LoggedRemoteID] = [], completedChecklist: [CompletedChecklistItem] = [], segments: [FlightSegment] = [], trashedDate: Date? = nil) {
+    
+    init(id: UUID = UUID(), date: Date = Date(), aircraftID: UUID? = nil, location: String = "", pilotInCommand: String = "", missionNotes: String = "", weather: WeatherData = WeatherData(), pmtcBy: String? = nil, visualObserver: String? = nil, loggedRemoteIDs: [LoggedRemoteID] = [], completedChecklist: [CompletedChecklistItem] = [], segments: [FlightSegment] = [], flightArea: FlightArea? = nil, trashedDate: Date? = nil) {
         self.id = id
         self.date = date
         self.aircraftID = aircraftID
@@ -94,6 +116,7 @@ struct FlightLog: Identifiable, Codable {
         self.loggedRemoteIDs = loggedRemoteIDs
         self.completedChecklist = completedChecklist
         self.segments = segments
+        self.flightArea = flightArea
         self.trashedDate = trashedDate
     }
 }
