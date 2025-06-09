@@ -768,7 +768,6 @@ struct SetupView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // The TabView acts as a pager for the setup steps.
             TabView(selection: $currentStep.animation()) {
                 SetupStep1_PilotType(settings: $settings).tag(0)
                 SetupStep2_Dates(settings: $settings, hasDoneRecurrent: $hasDoneRecurrent).tag(1)
@@ -776,9 +775,7 @@ struct SetupView: View {
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
 
-            // A clean, bordered view for the navigation controls.
             VStack {
-                // The page indicator is more subtle now.
                 HStack {
                     ForEach(0..<3) { index in
                         Circle()
@@ -790,7 +787,6 @@ struct SetupView: View {
                 .padding(.top)
 
                 HStack {
-                    // The "Back" button is only shown when applicable.
                     if currentStep > 0 {
                         Button("Back") { currentStep -= 1 }
                             .buttonStyle(.bordered)
@@ -801,14 +797,12 @@ struct SetupView: View {
                     if currentStep < 2 {
                         Button("Next") { currentStep += 1 }
                             .buttonStyle(.borderedProminent)
-                            // The "Next" button is disabled until the user enters their name.
                             .disabled(currentStep == 0 && settings.pilotName.trimmingCharacters(in: .whitespaces).isEmpty)
                     } else {
                         Button("Finish Setup") {
                             viewModel.finalizeSetup(settings: settings, drones: drones, hasDoneRecurrent: hasDoneRecurrent)
                         }
                         .buttonStyle(.borderedProminent)
-                        // The "Finish" button is disabled until at least one drone has been added.
                         .disabled(drones.isEmpty)
                     }
                 }
@@ -816,22 +810,15 @@ struct SetupView: View {
             }
             .background(.thinMaterial)
         }
-        // This ignores the safe area for the keyboard, ensuring the view uses all
-        // available space, which is important for smaller devices.
         .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 }
 
-/// A view for the first step of the setup process, focusing on pilot identity.
-///
-/// This version enhances the clear and functional `Form` layout with a much more
-/// vibrant and welcoming header section to give the app a great first impression.
 struct SetupStep1_PilotType: View {
     @Binding var settings: UserSettings
     
     var body: some View {
         Form {
-            // Section 1: A visually engaging header to welcome the user.
             Section {
                 VStack(spacing: 16) {
                     Image(systemName: "person.text.rectangle")
@@ -852,12 +839,10 @@ struct SetupStep1_PilotType: View {
             .listRowInsets(EdgeInsets())
             .listRowBackground(Color.clear)
 
-            // Section 2: Input field for the pilot's name.
             Section("Pilot Information") {
                 TextField("Your Name (Pilot in Command)", text: $settings.pilotName)
             }
             
-            // Section 3: A segmented control for selecting the pilot type.
             Section("Pilot Type") {
                 Picker("Select your pilot type", selection: $settings.pilotType) {
                     ForEach(PilotType.allCases) { type in
@@ -870,17 +855,12 @@ struct SetupStep1_PilotType: View {
     }
 }
 
-/// A view for the second step of the setup process, for entering certification dates.
-///
-/// This version enhances the Form by incorporating SF Symbols directly into the rows,
-/// creating the "Apple-like" feel in a clean and standard way.
 struct SetupStep2_Dates: View {
     @Binding var settings: UserSettings
     @Binding var hasDoneRecurrent: Bool
 
     var body: some View {
         Form {
-            // Section 1: A clear header explaining the purpose of this step.
             Section {
                 VStack(spacing: 16) {
                     Image(systemName: "calendar.badge.clock")
@@ -901,7 +881,6 @@ struct SetupStep2_Dates: View {
             .listRowInsets(EdgeInsets())
             .listRowBackground(Color.clear)
             
-            // The view adapts dynamically based on the pilot type selected in the previous step.
             if settings.pilotType == .part107 {
                 Section(
                     header: Text("Part 107 Information"),
@@ -927,17 +906,12 @@ struct SetupStep2_Dates: View {
         }
     }
 }
-/// A view for the third step of the setup process, focusing on adding equipment.
 struct SetupStep3_Equipment: View {
-    /// A binding to the array of drones being configured during setup.
     @Binding var drones: [Drone]
-    
-    /// State to control the presentation of the "Add Drone" sheet.
     @State private var showAddSheet = false
 
     var body: some View {
         Form {
-            // Section 1: A clear header explaining the purpose of this step.
             Section {
                 VStack(alignment: .center, spacing: 16) {
                     Image(systemName: "airplane.circle")
@@ -958,11 +932,8 @@ struct SetupStep3_Equipment: View {
             .listRowInsets(EdgeInsets())
             .listRowBackground(Color.clear)
             
-            // Section 2: Displays the list of added drones or the empty state view.
             Section(header: Text("My Drones")) {
                 if drones.isEmpty {
-                    // Use ContentUnavailableView for a rich, standard empty state.
-                    // This clearly guides the user on what to do next.
                     ContentUnavailableView(
                         "No Drones Added",
                         systemImage: "shippingbox.circle",
@@ -970,7 +941,6 @@ struct SetupStep3_Equipment: View {
                     )
                     .padding(.vertical)
                 } else {
-                    // Display the list of drones with an onDelete modifier.
                     ForEach(drones) { drone in
                         VStack(alignment: .leading, spacing: 4) {
                             Text(drone.displayName)
@@ -987,7 +957,6 @@ struct SetupStep3_Equipment: View {
                 }
             }
             
-            // Section 3: Contains the primary action button for this screen.
             Section {
                 Button(action: {
                     showAddSheet = true
@@ -996,9 +965,6 @@ struct SetupStep3_Equipment: View {
                 }
             }
         }
-        // The sheet modifier presents the AddEditDroneView when showAddSheet is true.
-        // It uses the special initializer that takes a completion closure, which is
-        // ideal for a setup flow.
         .sheet(isPresented: $showAddSheet) {
             AddEditDroneView(droneToEdit: nil) { newDrone in
                 drones.append(newDrone)
@@ -1052,7 +1018,8 @@ struct FlightLogListView: View {
             }
         }
         .sheet(isPresented: $viewModel.isLoggingFlight) {
-            FlightLoggingView(log: $viewModel.activeLog)
+            FlightLoggingContainerView()
+                .environmentObject(viewModel)
         }
     }
 
@@ -1085,61 +1052,254 @@ struct LoggedIDDetailView: View {
     }
 }
 
-struct FlightLoggingView: View {
+// MARK: - New Flight Logging Flow
+
+struct FlightLoggingContainerView: View {
+    @EnvironmentObject var viewModel: AppViewModel
+    
+    private enum LoggingStep {
+        case preFlight, inFlight, review
+        
+        var title: String {
+            switch self {
+            case .preFlight: return "Pre-Flight"
+            case .inFlight: return "In-Flight"
+            case .review: return "Review & Save"
+            }
+        }
+    }
+    
+    @State private var currentStep: LoggingStep = .preFlight
+    
+    private func discardFlight() {
+        // BUG FIX: End the segment to reset the isSegmentActive flag and stop timers.
+        if viewModel.isSegmentActive {
+            viewModel.endCurrentSegment()
+        }
+        
+        // Perform the rest of the cleanup.
+        viewModel.telemetryTimer?.invalidate()
+        viewModel.telemetryTimer = nil
+        viewModel.isLoggingFlight = false
+        viewModel.bluetoothScanner.stopScanning()
+    }
+
+    var body: some View {
+        NavigationView {
+            Group {
+                switch currentStep {
+                case .preFlight:
+                    PreFlightSetupView(
+                        log: $viewModel.activeLog,
+                        onProceed: { currentStep = .inFlight }
+                    )
+                case .inFlight:
+                    InFlightLoggingView(
+                        log: $viewModel.activeLog,
+                        onProceed: {
+                            if viewModel.isSegmentActive {
+                               viewModel.endCurrentSegment()
+                            }
+                            currentStep = .review
+                        }
+                    )
+                case .review:
+                    PostFlightReviewView(log: $viewModel.activeLog)
+                }
+            }
+            .navigationTitle(currentStep.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Discard", role: .destructive) { discardFlight() }
+                }
+            }
+        }
+        .environmentObject(viewModel)
+    }
+}
+
+struct PreFlightSetupView: View {
     @EnvironmentObject var viewModel: AppViewModel
     @Binding var log: FlightLog
-
+    var onProceed: () -> Void
+    
     @State private var isUsingPMTC = false
     @State private var isUsingVO = false
     @State private var selectedChecklistID: UUID?
 
     var body: some View {
-        NavigationView {
+        VStack(spacing: 0) {
+            Form {
+                flightDetailsSection
+                additionalCrewSection
+                checklistSection
+                weatherSection
+                missionNotesSection
+                
+            }
+            
+            Button(action: onProceed) {
+                Label("Start Flight", systemImage: "airplane.departure")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .padding()
+            .background(.thinMaterial)
+        }
+        .onAppear {
+            if let firstItem = log.completedChecklist.first,
+               let checklist = viewModel.checklists.first(where: { $0.items.contains(where: { $0.id == firstItem.id }) }) {
+                selectedChecklistID = checklist.id
+            }
+            isUsingPMTC = !(log.pmtcBy?.isEmpty ?? true)
+            isUsingVO = !(log.visualObserver?.isEmpty ?? true)
+        }
+    }
+    
+    private var flightDetailsSection: some View {
+        Section("Flight Details") {
+            Picker("Aircraft", selection: $log.aircraftID) {
+                ForEach(viewModel.drones) { drone in
+                    Text(drone.displayName).tag(drone.id as UUID?)
+                }
+            }
+            TextField("Location", text: $log.location)
+            TextField("Pilot in Command", text: $log.pilotInCommand)
+        }
+    }
+    
+    private var checklistSection: some View {
+        Section("Pre-flight Checklist") {
+            if viewModel.checklists.isEmpty {
+                Text("No checklists available.").foregroundStyle(.secondary)
+            } else {
+                Picker("Select Checklist", selection: $selectedChecklistID) {
+                    Text("None").tag(nil as UUID?)
+                    ForEach(viewModel.checklists) { Text($0.name).tag($0.id as UUID?) }
+                }
+                .onChange(of: selectedChecklistID) { updateCompletedChecklist(for: $1) }
+                
+                ForEach($log.completedChecklist) { $item in
+                    checklistRow(for: $item)
+                }
+            }
+        }
+    }
+    
+    private var additionalCrewSection: some View {
+        Section("Additional Crew") {
+            Toggle("PMTC Performed?", isOn: $isUsingPMTC.animation())
+            if isUsingPMTC {
+                TextField("PMTC Performed By", text: Binding($log.pmtcBy, replacingNilWith: ""))
+            }
+            Toggle("Visual Observer Used?", isOn: $isUsingVO.animation())
+            if isUsingVO {
+                TextField("Visual Observer Name", text: Binding($log.visualObserver, replacingNilWith: ""))
+            }
+        }
+    }
+    
+    private var missionNotesSection: some View {
+        Section("Mission Notes") {
+            TextEditor(text: $log.missionNotes)
+                .frame(minHeight: 100)
+        }
+    }
+    
+    private var weatherSection: some View {
+        Section("Weather") {
+            HStack {
+                TextField("Airport ICAO Code", text: $log.weather.icao)
+                    .autocapitalization(.allCharacters)
+                    .disableAutocorrection(true)
+                    .font(.system(.body, design: .monospaced))
+                
+                Button("Fetch", action: viewModel.fetchWeather)
+                    .disabled(log.weather.icao.count != 4)
+            }
+            InfoRow(label: "Raw METAR", value: log.weather.metar, multiline: true)
+            
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Decoded METAR")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(log.weather.decodedMetar)
+                    .font(.footnote)
+            }
+            .padding(.vertical, 4)
+        }
+    }
+    
+    private func checklistRow(for item: Binding<CompletedChecklistItem>) -> some View {
+        Button(action: {
+            item.wrappedValue.isChecked.toggle()
+            item.wrappedValue.completionDate = item.wrappedValue.isChecked ? Date() : nil
+        }) {
+            HStack {
+                Image(systemName: item.wrappedValue.isChecked ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(item.wrappedValue.isChecked ? .green : .secondary)
+                Text(item.wrappedValue.text)
+                    .strikethrough(item.wrappedValue.isChecked)
+                    .foregroundStyle(item.wrappedValue.isChecked ? .secondary : .primary)
+                Spacer()
+                if let completionDate = item.wrappedValue.completionDate {
+                    Text(completionDate, style: .time).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+
+    private func updateCompletedChecklist(for checklistId: UUID?) {
+        guard let id = checklistId, let checklist = viewModel.checklists.first(where: { $0.id == id }) else {
+            log.completedChecklist = []
+            return
+        }
+        log.completedChecklist = checklist.items.map {
+            CompletedChecklistItem(id: $0.id, text: $0.text, isChecked: false, completionDate: nil)
+        }
+    }
+}
+
+struct InFlightLoggingView: View {
+    @EnvironmentObject var viewModel: AppViewModel
+    @Binding var log: FlightLog
+    var onProceed: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 0) {
             Form {
                 liveLoggingSection
                 inFlightControlsSection
                 flightSegmentsSection
                 remoteIDSection
-                checklistSection
-                flightDetailsSection
-                additionalCrewSection
-                missionNotesSection
-                weatherSection
             }
-            .navigationTitle("New Flight")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        viewModel.stopLogging()
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save & End Flight", action: viewModel.stopLogging)
-                }
+            
+            Button(action: onProceed) {
+                Label("End Flight & Review", systemImage: "flag.checkered.2.crossed")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
             }
-            .onAppear {
-                if let firstItem = log.completedChecklist.first,
-                   let checklist = viewModel.checklists.first(where: { $0.items.contains(where: { $0.id == firstItem.id }) }) {
-                    selectedChecklistID = checklist.id
-                }
-            }
+            .buttonStyle(.borderedProminent)
+            .padding()
+            .background(.thinMaterial)
         }
     }
-
-    // MARK: - Refactored View Sections
-
+    
     private var liveLoggingSection: some View {
         Section("Live Flight Logging") {
             HStack {
                 Text("Total Duration:")
                 Spacer()
                 Text(formatDuration(log.flightDuration))
-                    .font(.system(.title, design: .monospaced))
+                    .font(.system(.title2, design: .monospaced).bold())
                     .foregroundStyle(viewModel.isSegmentActive ? .green : Color.accentColor)
             }
         }
     }
-
+    
     private var inFlightControlsSection: some View {
         Section("In-Flight Controls") {
             HStack {
@@ -1163,116 +1323,103 @@ struct FlightLoggingView: View {
     private var flightSegmentsSection: some View {
         Section("Flight Segments") {
             if log.segments.isEmpty {
-                Text("Press 'Take Off' to start a segment.")
-                    .foregroundStyle(.secondary)
+                Text("Press 'Take Off' to start the first segment.").foregroundStyle(.secondary)
             } else {
                 ForEach(log.segments.reversed()) { segment in
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
-                            Text("Takeoff:")
-                                .fontWeight(.medium)
+                            Text("Takeoff:").fontWeight(.medium)
                             Text(segment.startTime, style: .time)
                             Spacer()
                             if let endTime = segment.endTime {
-                                Text("Landing:")
-                                    .fontWeight(.medium)
+                                Text("Landing:").fontWeight(.medium)
                                 Text(endTime, style: .time)
                             } else {
-                                Text("In Progress")
-                                    .fontWeight(.bold)
-                                    .foregroundStyle(.green)
+                                Text("In Progress").bold().foregroundStyle(.green)
                             }
                         }
                         Text("Duration: \(formatDuration(segment.duration))")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }
         }
     }
-
+    
     private var remoteIDSection: some View {
         Section("Detected Remote IDs") {
             if let loggedIDs = log.loggedRemoteIDs, !loggedIDs.isEmpty {
                 ForEach(loggedIDs) { rid in
                     NavigationLink(destination: LoggedIDDetailView(loggedID: rid)) {
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text(rid.basicID?.uasID ?? "ID Unavailable")
-                                    .font(.headline)
-                                if let lastRecord = rid.telemetry.last {
-                                    Text("RSSI: \(lastRecord.rssi) dBm")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
+                        VStack(alignment: .leading) {
+                            Text(rid.displayName).font(.headline)
+                            if let last = rid.telemetry.last {
+                                Text("RSSI: \(last.rssi) dBm").font(.caption).foregroundStyle(.secondary)
                             }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .foregroundStyle(.tertiary)
                         }
                     }
                 }
             } else {
-                Text("Scanning for nearby drones...")
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("Scanning for nearby drones...")
+                }.foregroundStyle(.secondary)
             }
         }
     }
 
-    private var checklistSection: some View {
-        Section("Pre-flight Checklist") {
-            if viewModel.checklists.isEmpty {
-                Text("No checklists available. Add one from the Checklists tab.")
-                    .foregroundStyle(.secondary)
-            } else {
-                checklistPicker
-                completedItemsList
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.hour, .minute, .second]
+        formatter.unitsStyle = .positional
+        formatter.zeroFormattingBehavior = .pad
+        return formatter.string(from: duration) ?? "00:00:00"
+    }
+}
+
+struct PostFlightReviewView: View {
+    @EnvironmentObject var viewModel: AppViewModel
+    @Binding var log: FlightLog
+
+    @State private var isUsingPMTC = false
+    @State private var isUsingVO = false
+    @State private var selectedChecklistID: UUID?
+
+    var body: some View {
+        Form {
+            Section("Flight Summary") {
+                InfoRow(label: "Aircraft", value: viewModel.droneForID(log.aircraftID)?.displayName ?? "N/A")
+                InfoRow(label: "Location", value: log.location)
+                InfoRow(label: "Date", value: log.date.formatted(date: .long, time: .shortened))
+                InfoRow(label: "Total Duration", value: formatDuration(log.flightDuration))
+            }
+            
+            missionNotesSection
+            flightSegmentsSection
+            flightDetailsSection
+            additionalCrewSection
+            checklistSection
+            weatherSection
+            remoteIDSection
+        }
+        .onAppear {
+            if let firstItem = log.completedChecklist.first,
+               let checklist = viewModel.checklists.first(where: { $0.items.contains(where: { $0.id == firstItem.id }) }) {
+                selectedChecklistID = checklist.id
+            }
+            isUsingPMTC = !(log.pmtcBy?.isEmpty ?? true)
+            isUsingVO = !(log.visualObserver?.isEmpty ?? true)
+        }
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save Flight") { viewModel.stopLogging() }
+                    .font(.headline)
             }
         }
     }
-
-    private var checklistPicker: some View {
-        Picker("Select Checklist", selection: $selectedChecklistID) {
-            Text("None").tag(nil as UUID?)
-            ForEach(viewModel.checklists) { checklist in
-                Text(checklist.name).tag(checklist.id as UUID?)
-            }
-        }
-        .onChange(of: selectedChecklistID) { _, newValue in
-            updateCompletedChecklist(for: newValue)
-        }
-    }
-
-    private var completedItemsList: some View {
-        ForEach($log.completedChecklist) { $item in
-            Button(action: {
-                $item.isChecked.wrappedValue.toggle()
-                if $item.isChecked.wrappedValue {
-                    $item.completionDate.wrappedValue = Date()
-                } else {
-                    $item.completionDate.wrappedValue = nil
-                }
-            }) {
-                HStack {
-                    Image(systemName: item.isChecked ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(item.isChecked ? .green : .secondary)
-                    Text(item.text)
-                        .strikethrough(item.isChecked)
-                        .foregroundStyle(item.isChecked ? .secondary : .primary)
-                    Spacer()
-                    if let completionDate = item.completionDate {
-                        Text(completionDate, style: .time)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(PlainButtonStyle())
-        }
-    }
-
+    
+    // MARK: - Copied Sections for Review & Editing -
+    
     private var flightDetailsSection: some View {
         Section("Flight Details") {
             Picker("Aircraft", selection: $log.aircraftID) {
@@ -1280,11 +1427,29 @@ struct FlightLoggingView: View {
                     Text(drone.displayName).tag(drone.id as UUID?)
                 }
             }
-            TextField("Location (e.g., Park, City, State)", text: $log.location)
-            TextField("Pilot in Command Name", text: $log.pilotInCommand)
+            TextField("Location", text: $log.location)
+            TextField("Pilot in Command", text: $log.pilotInCommand)
         }
     }
 
+    private var checklistSection: some View {
+        Section("Pre-flight Checklist") {
+            if viewModel.checklists.isEmpty {
+                Text("No checklists available.").foregroundStyle(.secondary)
+            } else {
+                Picker("Select Checklist", selection: $selectedChecklistID) {
+                    Text("None").tag(nil as UUID?)
+                    ForEach(viewModel.checklists) { Text($0.name).tag($0.id as UUID?) }
+                }
+                .onChange(of: selectedChecklistID) { updateCompletedChecklist(for: $1) }
+                
+                ForEach($log.completedChecklist) { $item in
+                    checklistRow(for: $item)
+                }
+            }
+        }
+    }
+    
     private var additionalCrewSection: some View {
         Section("Additional Crew") {
             Toggle("PMTC Performed?", isOn: $isUsingPMTC.animation())
@@ -1297,34 +1462,104 @@ struct FlightLoggingView: View {
             }
         }
     }
-
+    
     private var missionNotesSection: some View {
         Section("Mission Notes") {
             TextEditor(text: $log.missionNotes)
                 .frame(minHeight: 100)
         }
     }
-
+    
     private var weatherSection: some View {
         Section("Weather") {
             HStack {
                 TextField("Airport ICAO Code", text: $log.weather.icao)
                     .autocapitalization(.allCharacters)
                     .disableAutocorrection(true)
-                    .font(.system(.body, design: .monospaced))
-
+                
                 Button("Fetch", action: viewModel.fetchWeather)
                     .disabled(log.weather.icao.count != 4)
             }
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Raw METAR").font(.caption).foregroundStyle(.secondary)
-                Text(log.weather.metar)
-            }
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Decoded METAR").font(.caption).foregroundStyle(.secondary)
+            InfoRow(label: "Raw METAR", value: log.weather.metar, multiline: true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Decoded METAR")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Text(log.weather.decodedMetar)
-            }.padding(.top, 5)
+                    .font(.footnote)
+            }
+            .padding(.vertical, 4)
         }
+    }
+
+    private var flightSegmentsSection: some View {
+        Section("Flight Segments") {
+            if log.segments.isEmpty {
+                Text("No flight segments were recorded.").foregroundStyle(.secondary)
+            } else {
+                ForEach(log.segments.reversed()) { segment in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("Takeoff:").fontWeight(.medium)
+                            Text(segment.startTime, style: .time)
+                            Spacer()
+                            if let endTime = segment.endTime {
+                                Text("Landing:").fontWeight(.medium)
+                                Text(endTime, style: .time)
+                            }
+                        }
+                        Text("Duration: \(formatDuration(segment.duration))")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+    
+    private var remoteIDSection: some View {
+        Section("Detected Remote IDs") {
+            if let loggedIDs = log.loggedRemoteIDs, !loggedIDs.isEmpty {
+                ForEach(loggedIDs) { rid in
+                    NavigationLink(destination: LoggedIDDetailView(loggedID: rid)) {
+                        VStack(alignment: .leading) {
+                            Text(rid.displayName).font(.headline)
+                            Text("\(rid.telemetry.count) telemetry points").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            } else {
+                Text("No Remote IDs were detected.").foregroundStyle(.secondary)
+            }
+        }
+    }
+    
+    // MARK: - Helper Functions -
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.hour, .minute, .second]
+        formatter.unitsStyle = .positional
+        formatter.zeroFormattingBehavior = .pad
+        return formatter.string(from: duration) ?? "00:00:00"
+    }
+    
+    private func checklistRow(for item: Binding<CompletedChecklistItem>) -> some View {
+        Button(action: {
+            item.wrappedValue.isChecked.toggle()
+            item.wrappedValue.completionDate = item.wrappedValue.isChecked ? Date() : nil
+        }) {
+            HStack {
+                Image(systemName: item.wrappedValue.isChecked ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(item.wrappedValue.isChecked ? .green : .secondary)
+                Text(item.wrappedValue.text)
+                    .strikethrough(item.wrappedValue.isChecked)
+                Spacer()
+                if let completionDate = item.wrappedValue.completionDate {
+                    Text(completionDate, style: .time).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .buttonStyle(PlainButtonStyle())
     }
 
     private func updateCompletedChecklist(for checklistId: UUID?) {
@@ -1335,14 +1570,6 @@ struct FlightLoggingView: View {
         log.completedChecklist = checklist.items.map {
             CompletedChecklistItem(id: $0.id, text: $0.text, isChecked: false, completionDate: nil)
         }
-    }
-
-    private func formatDuration(_ duration: TimeInterval) -> String {
-        let formatter = DateComponentsFormatter()
-        formatter.allowedUnits = [.hour, .minute, .second]
-        formatter.unitsStyle = .positional
-        formatter.zeroFormattingBehavior = .pad
-        return formatter.string(from: duration) ?? "00:00:00"
     }
 }
 
@@ -1415,7 +1642,7 @@ struct FlightDetailView: View {
                             }
                         } label: {
                             VStack(alignment: .leading) {
-                                Text(rid.basicID?.uasID ?? "ID Unavailable").bold()
+                                Text(rid.displayName).bold()
                                 Text("Telemetry Points: \(rid.telemetry.count)")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
@@ -1430,7 +1657,7 @@ struct FlightDetailView: View {
             }
 
             Section("Weather Conditions") {
-                InfoRow(label: "Raw METAR", value: log.weather.metar)
+                InfoRow(label: "Raw METAR", value: log.weather.metar, multiline: true)
                 InfoRow(label: "Decoded", value: log.weather.decodedMetar, multiline: true)
             }
         }
@@ -1523,17 +1750,14 @@ struct EquipmentListView: View {
     }
 }
 
-// MODIFIED: This view is now more flexible to be used in the setup flow.
 struct AddEditDroneView: View {
     @EnvironmentObject var viewModel: AppViewModel
     @Environment(\.dismiss) var dismiss
 
     @State private var drone: Drone
     let isEditing: Bool
-    var onSave: ((Drone) -> Void)? // Closure to handle saving during setup
+    var onSave: ((Drone) -> Void)?
 
-    // This initializer determines if we are adding a new drone or editing one.
-    // It also accepts the optional onSave closure.
     init(droneToEdit: Drone?, onSave: ((Drone) -> Void)? = nil) {
         if let existingDrone = droneToEdit {
             _drone = State(initialValue: existingDrone)
@@ -1564,8 +1788,6 @@ struct AddEditDroneView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        // If the onSave closure was provided (i.e., we are in the setup flow),
-                        // use it. Otherwise, use the viewModel from the environment.
                         if let onSave = onSave {
                             onSave(drone)
                         } else {
@@ -1573,7 +1795,6 @@ struct AddEditDroneView: View {
                         }
                         dismiss()
                     }
-                    // Disable save button if critical info is missing.
                     .disabled(drone.company.isEmpty || drone.model.isEmpty || drone.faaRegistration.isEmpty)
                 }
             }
@@ -1824,7 +2045,6 @@ struct RemoteIDDetailView: View {
 }
 
 // MARK: Stats View
-// MODIFIED: This view is now "Stats & Settings" and reflects the new UserSettings model.
 struct StatsView: View {
     @EnvironmentObject var viewModel: AppViewModel
 
@@ -1924,6 +2144,7 @@ struct InfoRow: View {
                 .foregroundStyle(.secondary)
             Text(value)
                 .font(multiline ? .footnote : .body)
+                .lineLimit(multiline ? nil : 1)
         }
         .padding(.vertical, 4)
     }
