@@ -30,7 +30,6 @@ struct AppData: Codable {
 // A struct to hold the defined flight area details
 struct FlightArea: Codable, Hashable {
     var boundary: [CodableCoordinate] // For the drawn polygon
-    // <-- MODIFIED: Removed radius property
     var maxAGL: Double // User-defined max altitude in meters
 }
 
@@ -161,6 +160,32 @@ struct Checklist: Identifiable, Codable, Hashable {
     let id: UUID
     var name: String
     var items: [ChecklistItem]
+    var isFavorite: Bool
+
+    // We need a memberwise initializer because we are creating a custom decoder init
+    init(id: UUID, name: String, items: [ChecklistItem], isFavorite: Bool = false) {
+        self.id = id
+        self.name = name
+        self.items = items
+        self.isFavorite = isFavorite
+    }
+
+    // CodingKeys for all properties
+    enum CodingKeys: String, CodingKey {
+        case id, name, items, isFavorite
+    }
+
+    // Custom decoder initializer to handle missing 'isFavorite' key in old data
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(UUID.self, forKey: .id)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.items = try container.decode([ChecklistItem].self, forKey: .items)
+        
+        // This is the fix: try to decode 'isFavorite', but if the key is not found,
+        // default to 'false' instead of throwing an error.
+        self.isFavorite = try container.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
+    }
 }
 
 struct ChecklistItem: Identifiable, Codable, Hashable {

@@ -2,32 +2,7 @@ import SwiftUI
 import MapKit
 import CoreLocation
 
-// MARK: - Location Manager
-class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
-    private let manager = CLLocationManager()
-    @Published var userLocation: CLLocation?
-
-    override init() {
-        super.init()
-        manager.delegate = self
-    }
-
-    func requestLocation() {
-        manager.requestWhenInUseAuthorization()
-        manager.requestLocation()
-    }
-
-    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        DispatchQueue.main.async {
-            self.userLocation = locations.first
-        }
-    }
-
-    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        print("Failed to get user location: \(error.localizedDescription)")
-    }
-}
-
+// MODIFIED: Removed the LocationManager, FlightAreaMapView, and MKCoordinateRegion extension, as they have been moved to ReusableFormSections.swift
 
 /// The main container view for the flight logging flow, managing the multi-step process.
 struct FlightLoggingContainerView: View {
@@ -43,17 +18,19 @@ struct FlightLoggingContainerView: View {
     
     var body: some View {
         NavigationStack {
-            Group {
+            ZStack {
+                Color(.systemGroupedBackground).ignoresSafeArea()
+                
                 switch currentStep {
                 case .preFlight:
                     PreFlightSetupView(
-                        onProceed: { currentStep = .inFlight }
+                        onProceed: { withAnimation(.easeInOut) { currentStep = .inFlight } }
                     )
                 case .inFlight:
                     InFlightLoggingView(
                         onProceed: {
                             if viewModel.isSegmentActive { viewModel.endCurrentSegment() }
-                            currentStep = .review
+                            withAnimation(.easeInOut) { currentStep = .review }
                         }
                     )
                 case .review:
@@ -71,6 +48,30 @@ struct FlightLoggingContainerView: View {
     }
 }
 
+
+/// A helper for prominent, styled action buttons
+private struct ActionButton: View {
+    let title: String
+    let systemImage: String
+    let color: Color
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.headline.bold())
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(color.gradient)
+                .foregroundColor(.white)
+                .clipShape(Capsule())
+                .shadow(color: color.opacity(0.4), radius: 10, y: 5)
+        }
+        .padding([.horizontal, .bottom])
+    }
+}
+
+
 /// The first step in logging a flight: setting up details and checklists.
 private struct PreFlightSetupView: View {
     @EnvironmentObject var viewModel: AppViewModel
@@ -81,40 +82,57 @@ private struct PreFlightSetupView: View {
     @State private var selectedChecklistID: UUID?
     
     var body: some View {
-        VStack(spacing: 0) {
-            Form {
-                FlightDetailsSection(log: $viewModel.activeLog)
-                AdditionalCrewSection(log: $viewModel.activeLog, isUsingPMTC: $isUsingPMTC, isUsingVO: $isUsingVO)
-                checklistSection
-                WeatherSection(weather: $viewModel.activeLog.weather) {
-                    await viewModel.fetchWeather()
+        VStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Flight Details").font(.headline).foregroundStyle(.secondary)
+                    StyledSection { FlightDetailsSection(log: $viewModel.activeLog) }
+                    
+                    Text("Additional Crew").font(.headline).foregroundStyle(.secondary)
+                    StyledSection { AdditionalCrewSection(log: $viewModel.activeLog, isUsingPMTC: $isUsingPMTC, isUsingVO: $isUsingVO) }
+                    
+                    Text("Pre-flight Checklist").font(.headline).foregroundStyle(.secondary)
+                    StyledSection { checklistSection }
+
+                    Text("Weather").font(.headline).foregroundStyle(.secondary)
+                    StyledSection { WeatherSection(weather: $viewModel.activeLog.weather) { await viewModel.fetchWeather() } }
+
+                    Text("Mission Notes").font(.headline).foregroundStyle(.secondary)
+                    StyledSection { MissionNotesSection(notes: $viewModel.activeLog.missionNotes) }
                 }
-                MissionNotesSection(notes: $viewModel.activeLog.missionNotes)
+                .padding()
             }
             
-            Button(action: onProceed) {
-                Label("Start Flight", systemImage: "airplane.departure")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .padding()
-            .background(.thinMaterial)
+            ActionButton(title: "Start Flight", systemImage: "airplane.departure", color: .accentColor, action: onProceed)
         }
         .onAppear(perform: syncStateWithViewModel)
     }
     
     private var checklistSection: some View {
-        Section("Pre-flight Checklist") {
+        Group {
             if viewModel.checklists.isEmpty {
                 Text("No checklists available.").foregroundStyle(.secondary)
             } else {
-                Picker("Select Checklist", selection: $selectedChecklistID) {
-                    Text("None").tag(nil as UUID?)
-                    ForEach(viewModel.checklists) { Text($0.name).tag($0.id as UUID?) }
+                // MODIFIED: Replaced Picker with a Menu for a better layout.
+                HStack {
+                    Text("Checklist")
+                    Spacer()
+                    Menu {
+                        Button("None") { selectedChecklistID = nil }
+                        ForEach(viewModel.checklists) { checklist in
+                            Button(checklist.name) { selectedChecklistID = checklist.id }
+                        }
+                    } label: {
+                        Text(viewModel.checklists.first(where: { $0.id == selectedChecklistID })?.name ?? "Select Checklist")
+                            .foregroundColor(.secondary)
+                    }
                 }
                 .onChange(of: selectedChecklistID) {
                     updateCompletedChecklist(for: selectedChecklistID)
+                }
+                
+                if selectedChecklistID != nil && !viewModel.activeLog.completedChecklist.isEmpty {
+                    Divider()
                 }
                 
                 ForEach($viewModel.activeLog.completedChecklist) { $item in
@@ -172,52 +190,79 @@ private struct InFlightLoggingView: View {
     let onProceed: () -> Void
     
     var body: some View {
-        VStack(spacing: 0) {
-            Form {
-                liveLoggingSection
-                inFlightControlsSection
-                flightSegmentsSection
-                remoteIDSection
+        VStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    liveLoggingCard
+                    
+                    Text("In-Flight Controls").font(.headline).foregroundStyle(.secondary)
+                    StyledSection { inFlightControlsSection }
+                    
+                    Text("Flight Segments").font(.headline).foregroundStyle(.secondary)
+                    StyledSection { flightSegmentsSection }
+                    
+                    Text("Detected Remote IDs").font(.headline).foregroundStyle(.secondary)
+                    StyledSection { remoteIDSection }
+                }
+                .padding()
             }
-            
-            Button(action: onProceed) {
-                Label("End Flight & Review", systemImage: "flag.checkered.2.crossed")
-                    .font(.headline).frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent).padding().background(.thinMaterial)
+            ActionButton(title: "End Flight & Review", systemImage: "flag.checkered.2.crossed", color: .blue, action: onProceed)
         }
     }
     
-    private var liveLoggingSection: some View {
-        Section("Live Flight Logging") {
-            HStack {
-                Text("Total Duration:")
-                Spacer()
-                TimelineView(.periodic(from: .now, by: 1.0)) { _ in
-                    Text(Formatters.durationPositional.string(from: viewModel.activeLog.flightDuration) ?? "00:00:00")
-                        .font(.system(.title2, design: .monospaced).bold())
-                        .foregroundStyle(viewModel.isSegmentActive ? .green : Color.accentColor)
-                }
+    private var liveLoggingCard: some View {
+        VStack(spacing: 16) {
+            Text("LIVE FLIGHT LOGGING")
+                .font(.footnote.weight(.bold))
+                .foregroundStyle(.white.opacity(0.7))
+            
+            TimelineView(.periodic(from: .now, by: 1.0)) { _ in
+                Text(Formatters.durationPositional.string(from: viewModel.activeLog.flightDuration) ?? "00:00:00")
+                    .font(.system(size: 50, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .contentTransition(.numericText())
             }
+            
+            Text(viewModel.isSegmentActive ? "Segment In Progress" : "Landed")
+                .font(.headline)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background((viewModel.isSegmentActive ? Color.green : Color.orange).opacity(0.5))
+                .clipShape(Capsule())
+                .animation(.easeInOut, value: viewModel.isSegmentActive)
         }
+        .padding(30)
+        .frame(maxWidth: .infinity)
+        .background(Color.accentColor.gradient)
+        .clipShape(RoundedRectangle(cornerRadius: 25, style: .continuous))
+        .shadow(color: .accentColor.opacity(0.4), radius: 10, y: 5)
     }
     
     private var inFlightControlsSection: some View {
-        Section("In-Flight Controls") {
-            HStack {
-                Button(action: viewModel.startNewSegment) { Text("Take Off").frame(maxWidth: .infinity) }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(viewModel.isSegmentActive)
-
-                Button(action: viewModel.endCurrentSegment) { Text("Land").frame(maxWidth: .infinity) }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!viewModel.isSegmentActive)
+        HStack(spacing: 16) {
+            Button(action: viewModel.startNewSegment) {
+                Label("Take Off", systemImage: "arrow.up")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
             }
+            .buttonStyle(.borderedProminent)
+            .tint(.green)
+            .disabled(viewModel.isSegmentActive)
+
+            Button(action: viewModel.endCurrentSegment) {
+                Label("Land", systemImage: "arrow.down")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.orange)
+            .disabled(!viewModel.isSegmentActive)
         }
     }
     
     private var flightSegmentsSection: some View {
-        Section("Flight Segments") {
+        Group {
             if viewModel.activeLog.segments.isEmpty {
                 Text("Press 'Take Off' to start the first segment.").foregroundStyle(.secondary)
             } else {
@@ -237,29 +282,44 @@ private struct InFlightLoggingView: View {
                         Text("Duration: \(Formatters.durationPositional.string(from: segment.duration) ?? "")")
                             .font(.caption).foregroundStyle(.secondary)
                     }
+                    if segment.id != viewModel.activeLog.segments.reversed().last?.id {
+                        Divider()
+                    }
                 }
             }
         }
     }
     
     private var remoteIDSection: some View {
-        Section("Detected Remote IDs") {
+        // MODIFIED: Wrapped in a VStack with Dividers to ensure consistent full-width layout.
+        VStack(alignment: .leading, spacing: 12) {
             if !viewModel.activeLog.loggedRemoteIDs.isEmpty {
                 ForEach(viewModel.activeLog.loggedRemoteIDs) { rid in
                     NavigationLink(destination: LoggedIDDetailView(loggedID: rid)) {
-                        VStack(alignment: .leading) {
-                            Text(rid.displayName).font(.headline)
-                            if let last = rid.telemetry.last {
-                                Text("RSSI: \(last.rssi) dBm").font(.caption).foregroundStyle(.secondary)
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(rid.displayName).font(.headline)
+                                if let last = rid.telemetry.last {
+                                    Text("RSSI: \(last.rssi) dBm").font(.caption).foregroundStyle(.secondary)
+                                }
                             }
+                            Spacer()
                         }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .foregroundStyle(.primary)
+                    
+                    if rid.id != viewModel.activeLog.loggedRemoteIDs.last?.id {
+                        Divider()
                     }
                 }
             } else {
                 HStack(spacing: 10) {
                     ProgressView()
                     Text("Scanning for nearby drones...")
-                }.foregroundStyle(.secondary)
+                }
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
             }
         }
     }
@@ -273,24 +333,38 @@ private struct PostFlightReviewView: View {
     @State private var isUsingVO = false
     
     var body: some View {
-        Form {
-            Section("Flight Summary") {
-                InfoRow(label: "Aircraft", value: viewModel.droneForID(viewModel.activeLog.aircraftID)?.displayName ?? "")
-                InfoRow(label: "Location", value: viewModel.activeLog.location)
-                InfoRow(label: "Date", value: viewModel.activeLog.date.formatted(date: .long, time: .shortened))
-                InfoRow(label: "Total Duration", value: Formatters.durationPositional.string(from: viewModel.activeLog.flightDuration) ?? "")
-            }
-            
-            FlightDetailsSection(log: $viewModel.activeLog)
-            AdditionalCrewSection(log: $viewModel.activeLog, isUsingPMTC: $isUsingPMTC, isUsingVO: $isUsingVO)
-            MissionNotesSection(notes: $viewModel.activeLog.missionNotes)
-            WeatherSection(weather: $viewModel.activeLog.weather) {
-                await viewModel.fetchWeather()
+        VStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Flight Summary").font(.headline).foregroundStyle(.secondary)
+                    StyledSection {
+                        InfoRow(label: "Aircraft", value: viewModel.droneForID(viewModel.activeLog.aircraftID)?.displayName ?? "")
+                        Divider()
+                        InfoRow(label: "Location", value: viewModel.activeLog.location)
+                        Divider()
+                        InfoRow(label: "Date", value: viewModel.activeLog.date.formatted(date: .long, time: .shortened))
+                        Divider()
+                        InfoRow(label: "Total Duration", value: Formatters.durationPositional.string(from: viewModel.activeLog.flightDuration) ?? "")
+                    }
+                    
+                    Text("Flight Details").font(.headline).foregroundStyle(.secondary)
+                    StyledSection { FlightDetailsSection(log: $viewModel.activeLog) }
+
+                    Text("Additional Crew").font(.headline).foregroundStyle(.secondary)
+                    StyledSection { AdditionalCrewSection(log: $viewModel.activeLog, isUsingPMTC: $isUsingPMTC, isUsingVO: $isUsingVO) }
+                    
+                    Text("Mission Notes").font(.headline).foregroundStyle(.secondary)
+                    StyledSection { MissionNotesSection(notes: $viewModel.activeLog.missionNotes) }
+                    
+                    Text("Weather").font(.headline).foregroundStyle(.secondary)
+                    StyledSection { WeatherSection(weather: $viewModel.activeLog.weather) { await viewModel.fetchWeather() } }
+                }
+                .padding()
             }
         }
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button("Save Flight", action: viewModel.saveAndStopLogging).font(.headline)
+                Button("Save Flight", action: viewModel.saveAndStopLogging).bold()
             }
         }
         .onAppear {
@@ -298,214 +372,5 @@ private struct PostFlightReviewView: View {
              isUsingPMTC = !(log.pmtcBy?.isEmpty ?? true)
              isUsingVO = !(log.visualObserver?.isEmpty ?? true)
         }
-    }
-}
-
-
-// MARK: - Flight Area Map View
-struct FlightAreaMapView: View {
-    @Environment(\.dismiss) private var dismiss
-    @Binding var log: FlightLog
-
-    @StateObject private var locationManager = LocationManager()
-    @State private var position: MapCameraPosition = .automatic
-    @State private var initialLocationSet = false
-    
-    @State private var drawnPoints: [CLLocationCoordinate2D] = []
-    @State private var maxAGLText: String = ""
-    
-    @State private var isSaving = false
-    
-    var body: some View {
-        NavigationStack {
-            ZStack(alignment: .bottom) {
-                MapReader { reader in
-                    Map(position: $position) {
-                        UserAnnotation()
-                        
-                        if !drawnPoints.isEmpty {
-                            MapPolygon(coordinates: drawnPoints)
-                                .foregroundStyle(.blue.opacity(0.3))
-                            MapPolygon(coordinates: drawnPoints)
-                                .stroke(.blue, lineWidth: 2)
-                        }
-                        
-                        ForEach(Array(drawnPoints.enumerated()), id: \.offset) { index, point in
-                             Annotation("Point \(index + 1)", coordinate: point) {
-                                Image(systemName: "\(index + 1).circle.fill")
-                                    .font(.title2)
-                                    .foregroundStyle(.white, .blue)
-                                    .shadow(radius: 2)
-                            }
-                        }
-                    }
-                    .onTapGesture { screenPoint in
-                        if let location = reader.convert(screenPoint, from: .local) {
-                            drawnPoints.append(location)
-                        }
-                    }
-                }
-                .ignoresSafeArea(edges: .bottom)
-
-                VStack {
-                    HStack {
-                        Spacer()
-                        MapUserLocationButton()
-                        MapPitchToggle()
-                    }
-                    .padding()
-                    .buttonStyle(.borderedProminent)
-
-                    Spacer()
-                    bottomControlsView
-                }
-            }
-            .navigationTitle("Define Flight Area")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(action: saveAndDismiss) {
-                        if isSaving { ProgressView() } else { Text("Save") }
-                    }
-                    .disabled(drawnPoints.count < 3 || isSaving)
-                }
-            }
-            .onAppear(perform: onAppear)
-            .onReceive(locationManager.$userLocation) { location in
-                if let location, !initialLocationSet {
-                    if log.flightArea == nil {
-                        position = .region(MKCoordinateRegion(
-                            center: location.coordinate,
-                            span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
-                        ))
-                        initialLocationSet = true
-                    }
-                }
-            }
-        }
-    }
-
-    private var bottomControlsView: some View {
-        VStack {
-            HStack {
-                Button("Clear", systemImage: "trash") { drawnPoints.removeAll() }
-                    .buttonStyle(.bordered)
-                    .tint(.red)
-                
-                Spacer()
-                
-                Button("Undo", systemImage: "arrow.uturn.backward") {
-                    if !drawnPoints.isEmpty { drawnPoints.removeLast() }
-                }
-                .buttonStyle(.bordered)
-                .disabled(drawnPoints.isEmpty)
-            }
-            .padding([.horizontal, .top])
-            
-            Form {
-                Section("Operation Details") {
-                    HStack {
-                        Text("Maximum AGL (feet)")
-                        TextField("e.g., 400", text: $maxAGLText)
-                            .keyboardType(.decimalPad)
-                            .multilineTextAlignment(.trailing)
-                    }
-                }
-            }
-            .frame(height: 110)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .padding(.horizontal)
-        }
-        .background(.thinMaterial)
-    }
-    
-    private func onAppear() {
-        setupFromLog()
-        if log.flightArea == nil {
-            locationManager.requestLocation()
-        } else {
-            initialLocationSet = true
-        }
-    }
-    
-    private func setupFromLog() {
-        if let area = log.flightArea {
-            self.drawnPoints = area.boundary.map { $0.clLocationCoordinate2D }
-            self.maxAGLText = String(area.maxAGL)
-            
-            // <-- FIX: Check that drawnPoints is not empty before creating region
-            if !drawnPoints.isEmpty, let region = MKCoordinateRegion(coordinates: drawnPoints) {
-                self.position = .region(region)
-            }
-        }
-    }
-    
-    private func saveAndDismiss() {
-        guard !isSaving else { return }
-        isSaving = true
-        
-        let center = calculateCenter(of: drawnPoints)
-        guard let validCenter = center else {
-            isSaving = false; return
-        }
-        
-        let geocoder = CLGeocoder()
-        geocoder.reverseGeocodeLocation(CLLocation(latitude: validCenter.latitude, longitude: validCenter.longitude)) { placemarks, error in
-            
-            let locationString: String
-            if let placemark = placemarks?.first {
-                locationString = [placemark.name, placemark.locality, placemark.administrativeArea]
-                    .compactMap { $0 }
-                    .joined(separator: ", ")
-            } else {
-                locationString = String(format: "Area near %.4f, %.4f", validCenter.latitude, validCenter.longitude)
-            }
-            
-            let codableCoords = drawnPoints.map { CodableCoordinate(latitude: $0.latitude, longitude: $0.longitude) }
-            
-            let newFlightArea = FlightArea(
-                boundary: codableCoords,
-                maxAGL: Double(maxAGLText) ?? 0.0
-            )
-            
-            log.flightArea = newFlightArea
-            log.location = locationString
-            
-            isSaving = false
-            dismiss()
-        }
-    }
-    
-    private func calculateCenter(of coordinates: [CLLocationCoordinate2D]) -> CLLocationCoordinate2D? {
-        // <-- FIX: Handle empty array to prevent division by zero (NaN)
-        guard !coordinates.isEmpty else { return nil }
-        
-        let avgLat = coordinates.reduce(0) { $0 + $1.latitude } / Double(coordinates.count)
-        let avgLon = coordinates.reduce(0) { $0 + $1.longitude } / Double(coordinates.count)
-        return CLLocationCoordinate2D(latitude: avgLat, longitude: avgLon)
-    }
-}
-
-// Helper to create a map region that fits all coordinates.
-extension MKCoordinateRegion {
-    // <-- FIX: Make this initializer failable to handle the empty coordinates case
-    init?(coordinates: [CLLocationCoordinate2D]) {
-        // <-- FIX: Handle empty array to prevent division by zero (NaN)
-        guard !coordinates.isEmpty else { return nil }
-
-        var minLat = coordinates[0].latitude, maxLat = coordinates[0].latitude
-        var minLon = coordinates[0].longitude, maxLon = coordinates[0].longitude
-
-        for coordinate in coordinates {
-            minLat = min(minLat, coordinate.latitude)
-            maxLat = max(maxLat, coordinate.latitude)
-            minLon = min(minLon, coordinate.longitude)
-            maxLon = max(maxLon, coordinate.longitude)
-        }
-
-        let center = CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2, longitude: (minLon + maxLon) / 2)
-        let span = MKCoordinateSpan(latitudeDelta: (maxLat - minLat) * 1.4, longitudeDelta: (maxLon - minLon) * 1.4)
-        self.init(center: center, span: span)
     }
 }

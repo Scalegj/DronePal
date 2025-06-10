@@ -6,28 +6,33 @@ struct EquipmentListView: View {
     @State private var showAddDroneSheet = false
 
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
+            EquipmentSummaryView()
+                .padding()
+
             if viewModel.drones.isEmpty {
                 ContentUnavailableView(
                     "No Equipment",
                     systemImage: "airplane.circle",
                     description: Text("Tap the + button to add your first drone.")
                 )
+                .frame(maxHeight: .infinity)
             } else {
                 List {
                     ForEach(viewModel.drones) { drone in
                         NavigationLink(destination: DroneDetailView(drone: drone)) {
-                            VStack(alignment: .leading) {
-                                Text(drone.displayName).font(.headline)
-                                Text(drone.faaRegistration).font(.caption).foregroundStyle(.secondary)
-                            }
-                            .padding(.vertical, 4)
+                            EquipmentRowView(drone: drone)
                         }
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     }
                     .onDelete(perform: viewModel.deleteDrone)
                 }
+                .listStyle(.plain)
             }
         }
+        .background(Color(.systemGroupedBackground))
         .navigationTitle("My Equipment")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -42,6 +47,54 @@ struct EquipmentListView: View {
     }
 }
 
+/// A view to display summary equipment stats.
+struct EquipmentSummaryView: View {
+    @EnvironmentObject var viewModel: AppViewModel
+    
+    var body: some View {
+        HStack(spacing: 16) {
+            // MODIFICATION: Changed parameter name from 'icon' to 'image'
+            StatBox(title: "Total Drones", value: "\(viewModel.drones.count)", image: "shippingbox.fill", color: .blue)
+            StatBox(title: "Most Flown", value: viewModel.mostFlownDrone()?.model ?? "N/A", image: "star.fill", color: .yellow)
+        }
+        .frame(maxHeight: 100)
+    }
+}
+
+/// A compact card for the equipment list.
+struct EquipmentRowView: View {
+    let drone: Drone
+
+    var body: some View {
+        HStack(spacing: 16) {
+            Image(systemName: "airplane.circle.fill")
+                .font(.largeTitle)
+                .foregroundColor(.white)
+                .frame(width: 45)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(drone.displayName)
+                    .font(.headline.bold())
+                Text("Reg: \(drone.faaRegistration)")
+                    .font(.caption.monospaced())
+            }
+            .foregroundColor(.white)
+            Spacer()
+        }
+        .padding()
+        .background(
+            LinearGradient(
+                gradient: Gradient(colors: [.green, .teal.opacity(0.7)]),
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .green.opacity(0.3), radius: 5, x: 0, y: 2)
+    }
+}
+
+
 /// A view for adding a new drone or editing an existing one.
 struct AddEditDroneView: View {
     @EnvironmentObject var viewModel: AppViewModel
@@ -49,7 +102,6 @@ struct AddEditDroneView: View {
 
     @State private var drone: Drone
     let isEditing: Bool
-    /// A closure to handle saving, used by the setup flow.
     var onSave: ((Drone) -> Void)?
 
     init(droneToEdit: Drone?, onSave: ((Drone) -> Void)? = nil) {

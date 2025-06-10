@@ -1,34 +1,35 @@
 import SwiftUI
 
-// This file contains all views related to managing Checklists.
-
 struct ChecklistListView: View {
     @EnvironmentObject var viewModel: AppViewModel
     @State private var showAddChecklistSheet = false
+    
+    private var sortedChecklists: [Checklist] {
+        viewModel.checklists.sorted { $0.isFavorite && !$1.isFavorite }
+    }
 
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
+            ChecklistSummaryView()
+                .padding()
+
             if viewModel.checklists.isEmpty {
-                ContentUnavailableView(
-                    "No Checklists",
-                    systemImage: "checklist",
-                    description: Text("Tap the + button to create your first pre-flight checklist.")
-                )
+                ContentUnavailableView("No Checklists", systemImage: "checklist", description: Text("Tap the + button to create your first pre-flight checklist."))
+                .frame(maxHeight: .infinity)
             } else {
                 List {
-                    ForEach(viewModel.checklists) { checklist in
-                        NavigationLink(destination: ChecklistDetailView(checklist: checklist)) {
-                            VStack(alignment: .leading) {
-                                Text(checklist.name).font(.headline)
-                                Text("\(checklist.items.count) items").font(.caption).foregroundStyle(.secondary)
-                            }
-                            .padding(.vertical, 4)
-                        }
+                    ForEach(sortedChecklists) { checklist in
+                        ChecklistRowView(checklist: checklist)
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     }
                     .onDelete(perform: viewModel.deleteChecklist)
                 }
+                .listStyle(.plain)
             }
         }
+        .background(Color(.systemGroupedBackground))
         .navigationTitle("Pre-flight Checklists")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -42,6 +43,67 @@ struct ChecklistListView: View {
         }
     }
 }
+
+struct ChecklistSummaryView: View {
+    @EnvironmentObject var viewModel: AppViewModel
+    
+    var body: some View {
+        HStack(spacing: 16) {
+            // FIXED: Added the missing 'image' parameter with a relevant SF Symbol.
+            StatBox(title: "Total Checklists", value: "\(viewModel.checklists.count)", image: "doc.text.magnifyingglass", color: .indigo)
+        }
+        .frame(maxHeight: 100)
+    }
+}
+
+struct ChecklistRowView: View {
+    @EnvironmentObject var viewModel: AppViewModel
+    let checklist: Checklist
+    
+    var body: some View {
+        HStack(spacing: 16) {
+            Button(action: {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) {
+                    viewModel.toggleFavorite(for: checklist)
+                }
+            }) {
+                Image(systemName: checklist.isFavorite ? "star.fill" : "star")
+                    .font(.title) // MODIFICATION: Larger icon
+                    .foregroundColor(.yellow)
+                    .scaleEffect(checklist.isFavorite ? 1.2 : 1.0) // MODIFICATION: Animation effect
+            }
+            .buttonStyle(.plain)
+
+            NavigationLink(destination: ChecklistDetailView(checklist: checklist)) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(checklist.name)
+                            .font(.headline.bold())
+                        Text("\(checklist.items.count) items")
+                            .font(.caption)
+                            .opacity(0.8)
+                    }
+                    Spacer()
+                }
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, 20)
+        .padding(.vertical, 20)
+        .foregroundColor(.white)
+        .background(
+            LinearGradient(
+                gradient: Gradient(colors: [.indigo, .purple.opacity(0.7)]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .shadow(color: .indigo.opacity(0.3), radius: 8, x: 0, y: 4)
+    }
+}
+
 
 struct AddEditChecklistView: View {
     @EnvironmentObject var viewModel: AppViewModel

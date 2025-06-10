@@ -186,6 +186,13 @@ class AppViewModel: ObservableObject {
         saveData()
     }
     
+    func toggleFavorite(for checklist: Checklist) {
+        if let index = checklists.firstIndex(where: { $0.id == checklist.id }) {
+            checklists[index].isFavorite.toggle()
+            saveData()
+        }
+    }
+    
     func saveUserSettings() {
         // This function now simply triggers a save of the entire app's data.
         saveData()
@@ -238,6 +245,10 @@ class AppViewModel: ObservableObject {
         flightLogs.filter { $0.trashedDate != nil }.sorted { $0.trashedDate! > $1.trashedDate! }
     }
     
+    var favoriteChecklistCount: Int {
+        checklists.filter { $0.isFavorite }.count
+    }
+    
     var totalFlightTime: TimeInterval {
         activeFlightLogs.reduce(0) { $0 + $1.flightDuration }
     }
@@ -255,6 +266,21 @@ class AppViewModel: ObservableObject {
     func droneForID(_ id: UUID?) -> Drone? {
         guard let id = id else { return nil }
         return drones.first { $0.id == id }
+    }
+    
+    func mostFlownDrone() -> Drone? {
+        // CORRECTION: Explicitly define the dictionary type to resolve ambiguity.
+        let flightCounts = activeFlightLogs.reduce(into: [UUID: Int]()) { counts, log in
+            guard let id = log.aircraftID else { return }
+            counts[id, default: 0] += 1
+        }
+        
+        // Find the drone ID with the highest count
+        guard let topDroneID = flightCounts.max(by: { $0.value < $1.value })?.key else {
+            return drones.first
+        }
+        
+        return droneForID(topDroneID)
     }
     
     // MARK: - Private Methods

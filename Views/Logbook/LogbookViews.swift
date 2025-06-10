@@ -1,5 +1,5 @@
 import SwiftUI
-import MapKit // <-- ADDED: To display the map
+import MapKit
 
 /// The main list view for displaying all flight logs.
 struct FlightLogListView: View {
@@ -13,27 +13,15 @@ struct FlightLogListView: View {
                 List {
                     ForEach(viewModel.activeFlightLogs) { log in
                         NavigationLink(destination: FlightDetailView(log: log)) {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text(viewModel.droneForID(log.aircraftID)?.displayName ?? "Unknown Aircraft")
-                                    .font(.headline)
-                                Text(log.location)
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                HStack {
-                                    Image(systemName: "calendar")
-                                    Text(log.date, style: .date)
-                                    Spacer()
-                                    Image(systemName: "clock")
-                                    Text(Formatters.durationAbbreviated.string(from: log.flightDuration) ?? "0s")
-                                }
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            }
-                            .padding(.vertical, 8)
+                           FlightLogRowView(log: log)
                         }
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     }
                     .onDelete(perform: viewModel.moveLogToTrash)
                 }
+                .listStyle(.plain)
             }
         }
         .navigationTitle("Flight Logbook")
@@ -54,6 +42,62 @@ struct FlightLogListView: View {
         .sheet(isPresented: $viewModel.isLoggingFlight) {
             FlightLoggingContainerView()
         }
+    }
+}
+
+/// A vibrant, gradient-based card view for flight logs.
+struct FlightLogRowView: View {
+    @EnvironmentObject var viewModel: AppViewModel
+    let log: FlightLog
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) { // MODIFICATION: Reduced spacing
+            HStack {
+                VStack(alignment: .leading) {
+                    Text(viewModel.droneForID(log.aircraftID)?.displayName ?? "Unknown Aircraft")
+                        .font(.title3.bold()) // MODIFICATION: Adjusted font
+                    Text(log.location)
+                        .font(.caption) // MODIFICATION: Adjusted font
+                        .opacity(0.8)
+                }
+                Spacer()
+                Image(systemName: "airplane.departure")
+                    .font(.largeTitle)
+                    .opacity(0.3)
+            }
+
+            Spacer()
+
+            HStack(alignment: .bottom) {
+                VStack(alignment: .leading) {
+                    Text("DATE")
+                        .font(.caption2.weight(.semibold)) // MODIFICATION: Adjusted font
+                        .opacity(0.8)
+                    Text(log.date, style: .date)
+                        .font(.subheadline.weight(.medium)) // MODIFICATION: Adjusted font
+                }
+                Spacer()
+                VStack(alignment: .trailing) {
+                    Text("DURATION")
+                        .font(.caption2.weight(.semibold)) // MODIFICATION: Adjusted font
+                        .opacity(0.8)
+                    Text(Formatters.durationAbbreviated.string(from: log.flightDuration) ?? "0s")
+                        .font(.subheadline.weight(.medium)) // MODIFICATION: Adjusted font
+                }
+            }
+        }
+        .padding()
+        .frame(height: 120) // MODIFICATION: Reduced height
+        .foregroundColor(.white)
+        .background(
+            LinearGradient(
+                gradient: Gradient(colors: [.blue, .accentColor.opacity(0.7)]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 25, style: .continuous))
+        .shadow(color: .blue.opacity(0.3), radius: 10, x: 0, y: 5)
     }
 }
 
@@ -124,104 +168,131 @@ struct FlightDetailView: View {
     let log: FlightLog
 
     var body: some View {
-        Form {
-            Section("Flight Information") {
-                InfoRow(label: "Aircraft", value: viewModel.droneForID(log.aircraftID)?.displayName ?? "N/A")
-                InfoRow(label: "Location", value: log.location)
-                InfoRow(label: "Date", value: log.date.formatted(date: .long, time: .shortened))
-                InfoRow(label: "Total Duration", value: Formatters.durationPositional.string(from: log.flightDuration) ?? "00:00:00")
-                InfoRow(label: "Pilot in Command", value: log.pilotInCommand)
-            }
-
-            if let flightArea = log.flightArea, !flightArea.boundary.isEmpty {
-                Section("Flight Area") {
-                    // <-- FIX: Safely unwrap the failable initializer.
-                    if let region = MKCoordinateRegion(coordinates: flightArea.boundary.map { $0.clLocationCoordinate2D }) {
-                        Map(initialPosition: .region(region)) {
-                            let coordinates = flightArea.boundary.map { $0.clLocationCoordinate2D }
-                            MapPolygon(coordinates: coordinates)
-                                .foregroundStyle(.blue.opacity(0.3))
-                            MapPolygon(coordinates: coordinates)
-                                .stroke(.blue, lineWidth: 2)
-                        }
-                        .frame(height: 250)
-                        .listRowInsets(EdgeInsets())
-                        .allowsHitTesting(false)
-
-                        InfoRow(label: "Max AGL", value: "\(Int(flightArea.maxAGL)) ft")
-                    }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Flight Information").font(.headline).foregroundStyle(.secondary)
+                StyledSection {
+                    InfoRow(label: "Aircraft", value: viewModel.droneForID(log.aircraftID)?.displayName ?? "N/A")
+                    Divider()
+                    InfoRow(label: "Location", value: log.location)
+                    Divider()
+                    InfoRow(label: "Date", value: log.date.formatted(date: .long, time: .shortened))
+                    Divider()
+                    InfoRow(label: "Total Duration", value: Formatters.durationPositional.string(from: log.flightDuration) ?? "00:00:00")
+                    Divider()
+                    InfoRow(label: "Pilot in Command", value: log.pilotInCommand)
                 }
-            }
 
-            if !log.segments.isEmpty {
-                Section("Flight Segments") {
-                    ForEach(log.segments) { segment in
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Text("Takeoff: \(segment.startTime.formatted(date: .omitted, time: .standard))")
-                                Spacer()
-                                if let endTime = segment.endTime {
-                                    Text("Landing: \(endTime.formatted(date: .omitted, time: .standard))")
-                                }
+                if let flightArea = log.flightArea, !flightArea.boundary.isEmpty {
+                    Text("Flight Area").font(.headline).foregroundStyle(.secondary)
+                    StyledSection {
+                        if let region = MKCoordinateRegion(coordinates: flightArea.boundary.map { $0.clLocationCoordinate2D }) {
+                            Map(initialPosition: .region(region)) {
+                                let coordinates = flightArea.boundary.map { $0.clLocationCoordinate2D }
+                                MapPolygon(coordinates: coordinates)
+                                    .foregroundStyle(.blue.opacity(0.3))
+                                MapPolygon(coordinates: coordinates)
+                                    .stroke(.blue, lineWidth: 2)
                             }
-                            Text("Duration: \(Formatters.durationPositional.string(from: segment.duration) ?? "")")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            .frame(height: 250)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .allowsHitTesting(false)
+                            
+                            Divider()
+                            InfoRow(label: "Max AGL", value: "\(Int(flightArea.maxAGL)) ft")
                         }
                     }
                 }
-            }
 
-            if (log.pmtcBy != nil && !log.pmtcBy!.isEmpty) || (log.visualObserver != nil && !log.visualObserver!.isEmpty) {
-                Section("Additional Crew") {
-                    if let pmtc = log.pmtcBy, !pmtc.isEmpty { InfoRow(label: "PMTC By", value: pmtc) }
-                    if let vo = log.visualObserver, !vo.isEmpty { InfoRow(label: "Visual Observer", value: vo) }
-                }
-            }
-
-            if !log.completedChecklist.isEmpty {
-                Section("Pre-flight Checklist") {
-                    ForEach(log.completedChecklist) { item in
-                        HStack {
-                            Image(systemName: item.isChecked ? "checkmark.circle.fill" : "x.circle.fill")
-                                .foregroundStyle(item.isChecked ? .green : .red)
-                            Text(item.text)
-                                .strikethrough(item.isChecked)
-                            Spacer()
-                            if let completionDate = item.completionDate {
-                                Text(completionDate, style: .time)
+                if !log.segments.isEmpty {
+                    Text("Flight Segments").font(.headline).foregroundStyle(.secondary)
+                    StyledSection {
+                        ForEach(log.segments) { segment in
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Text("Takeoff: \(segment.startTime.formatted(date: .omitted, time: .standard))")
+                                    Spacer()
+                                    if let endTime = segment.endTime {
+                                        Text("Landing: \(endTime.formatted(date: .omitted, time: .standard))")
+                                    }
+                                }
+                                Text("Duration: \(Formatters.durationPositional.string(from: segment.duration) ?? "")")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
+                            if segment.id != log.segments.last?.id { Divider() }
                         }
                     }
                 }
-            }
 
-            if !log.loggedRemoteIDs.isEmpty {
-                Section("Detected Remote ID Telemetry") {
-                    ForEach(log.loggedRemoteIDs) { rid in
-                        NavigationLink(destination: LoggedIDDetailView(loggedID: rid)) {
-                           VStack(alignment: .leading) {
-                               Text(rid.displayName).bold()
-                               Text("Telemetry Points: \(rid.telemetry.count)")
-                                   .font(.caption)
-                                   .foregroundStyle(.secondary)
-                           }
+                if (log.pmtcBy != nil && !log.pmtcBy!.isEmpty) || (log.visualObserver != nil && !log.visualObserver!.isEmpty) {
+                    Text("Additional Crew").font(.headline).foregroundStyle(.secondary)
+                    StyledSection {
+                        if let pmtc = log.pmtcBy, !pmtc.isEmpty { InfoRow(label: "PMTC By", value: pmtc) }
+                        if let vo = log.visualObserver, !vo.isEmpty { InfoRow(label: "Visual Observer", value: vo) }
+                    }
+                }
+
+                if !log.completedChecklist.isEmpty {
+                    Text("Pre-flight Checklist").font(.headline).foregroundStyle(.secondary)
+                    StyledSection {
+                        ForEach(log.completedChecklist) { item in
+                            HStack {
+                                Image(systemName: item.isChecked ? "checkmark.circle.fill" : "x.circle.fill")
+                                    .foregroundStyle(item.isChecked ? .green : .red)
+                                Text(item.text)
+                                    .strikethrough(item.isChecked)
+                                Spacer()
+                                if let completionDate = item.completionDate {
+                                    Text(completionDate, style: .time)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            if item.id != log.completedChecklist.last?.id { Divider() }
                         }
                     }
                 }
-            }
 
-            Section("Mission Notes") {
-                Text(log.missionNotes.isEmpty ? "No notes." : log.missionNotes)
-            }
+                if !log.loggedRemoteIDs.isEmpty {
+                    Text("Detected Remote ID Telemetry").font(.headline).foregroundStyle(.secondary)
+                    StyledSection {
+                        ForEach(log.loggedRemoteIDs) { rid in
+                            NavigationLink(destination: LoggedIDDetailView(loggedID: rid)) {
+                               HStack {
+                                   VStack(alignment: .leading) {
+                                       Text(rid.displayName).bold()
+                                       Text("Telemetry Points: \(rid.telemetry.count)")
+                                           .font(.caption)
+                                           .foregroundStyle(.secondary)
+                                   }
+                                   Spacer()
+                                   Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                               }
+                            }
+                            .foregroundStyle(.primary)
+                            if rid.id != log.loggedRemoteIDs.last?.id { Divider() }
+                        }
+                    }
+                }
+                
+                Text("Mission Notes").font(.headline).foregroundStyle(.secondary)
+                StyledSection {
+                    // MODIFIED: Replaced the misuse of InfoRow with a simple Text view to fix the compiler error.
+                    Text(log.missionNotes.isEmpty ? "No notes." : log.missionNotes)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
 
-            Section("Weather Conditions") {
-                InfoRow(label: "Raw METAR", value: log.weather.metar, multiline: true)
-                InfoRow(label: "Decoded", value: log.weather.decodedMetar, multiline: true)
+                Text("Weather Conditions").font(.headline).foregroundStyle(.secondary)
+                StyledSection {
+                    InfoRow(label: "Raw METAR", value: log.weather.metar, multiline: true)
+                    Divider()
+                    InfoRow(label: "Decoded", value: log.weather.decodedMetar, multiline: true)
+                }
             }
+            .padding()
         }
+        .background(Color(.systemGroupedBackground))
         .navigationTitle("Flight Details")
         .navigationBarTitleDisplayMode(.inline)
     }

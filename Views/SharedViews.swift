@@ -14,8 +14,54 @@ struct InfoRow: View {
             Text(value.isEmpty ? "N/A" : value)
                 .font(multiline ? .footnote : .body)
                 .lineLimit(multiline ? nil : 1)
+                // MODIFIED: Ensure multi-line text is always left-aligned.
+                .multilineTextAlignment(.leading)
         }
         .padding(.vertical, 4)
+    }
+}
+
+/// A custom styled container for form-like sections used in the logging and stats views.
+struct StyledSection<Content: View>: View {
+    @ViewBuilder var content: Content
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            content
+        }
+        .padding()
+        // MODIFIED: Replaced .regularMaterial with an opaque background for better contrast.
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+}
+
+/// A helper view for the summary boxes used on several screens.
+struct StatBox: View {
+    let title: String
+    let value: String
+    let image: String
+    let color: Color
+    
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(.title2.bold())
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            Spacer()
+            Image(systemName: image)
+                .font(.title)
+                .foregroundStyle(color)
+        }
+        .padding()
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 20))
     }
 }
 
@@ -51,4 +97,3 @@ func rssiColor(_ rssi: Int) -> Color {
     default: return .red
     }
 }
-
