@@ -183,6 +183,17 @@ struct FlightDetailView: View {
                     InfoRow(label: "Pilot in Command", value: log.pilotInCommand)
                 }
 
+                if let clientInfo = log.clientInfo, !clientInfo.clientName.isEmpty {
+                    Text("Client & Project").font(.headline).foregroundStyle(.secondary)
+                    StyledSection {
+                        InfoRow(label: "Client Name", value: clientInfo.clientName)
+                        Divider()
+                        InfoRow(label: "Project ID", value: clientInfo.projectID)
+                        Divider()
+                        InfoRow(label: "Contact Info", value: clientInfo.contactInfo)
+                    }
+                }
+                
                 if let flightArea = log.flightArea, !flightArea.boundary.isEmpty {
                     Text("Flight Area").font(.headline).foregroundStyle(.secondary)
                     StyledSection {
@@ -225,11 +236,13 @@ struct FlightDetailView: View {
                     }
                 }
 
-                if (log.pmtcBy != nil && !log.pmtcBy!.isEmpty) || (log.visualObserver != nil && !log.visualObserver!.isEmpty) {
+                if !log.crew.isEmpty {
                     Text("Additional Crew").font(.headline).foregroundStyle(.secondary)
                     StyledSection {
-                        if let pmtc = log.pmtcBy, !pmtc.isEmpty { InfoRow(label: "PMTC By", value: pmtc) }
-                        if let vo = log.visualObserver, !vo.isEmpty { InfoRow(label: "Visual Observer", value: vo) }
+                        ForEach(log.crew) { member in
+                            InfoRow(label: member.roleName, value: member.personName)
+                            if member.id != log.crew.last?.id { Divider() }
+                        }
                     }
                 }
 

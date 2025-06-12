@@ -1,8 +1,6 @@
 import SwiftUI
-import MapKit // MODIFIED: Imported to support MapKit views
-import CoreLocation // MODIFIED: Imported to support CoreLocation types
-
-// MODIFIED: Moved FlightAreaMapView and its dependencies here to fix scope issues.
+import MapKit
+import CoreLocation
 
 // MARK: - Location Manager
 class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
@@ -236,63 +234,172 @@ struct FlightDetailsSection: View {
     @EnvironmentObject private var viewModel: AppViewModel
 
     var body: some View {
-        // MODIFIED: Replaced Picker with a Menu for a cleaner UI.
         HStack {
             Text("Aircraft")
             Spacer()
             Menu {
-                // A Button is used for each item in the Menu.
                 Button("No Aircraft Selected", action: { log.aircraftID = nil })
                 ForEach(viewModel.drones) { drone in
                     Button(drone.displayName) { log.aircraftID = drone.id }
                 }
             } label: {
-                // The label shows the currently selected value.
                 Text(viewModel.droneForID(log.aircraftID)?.displayName ?? "Select Aircraft")
                     .foregroundColor(.secondary)
             }
         }
         
-        // MODIFIED: Adjusted text colors for clarity.
         NavigationLink(destination: FlightAreaMapView(log: $log)) {
             HStack {
                 Text("Location")
                 Spacer()
                 Text(log.location.isEmpty ? "Set Flight Area" : log.location)
-                    // Highlight "Set Flight Area" in accent color, otherwise use secondary color.
                     .foregroundColor(log.location.isEmpty ? .accentColor : .secondary)
                     .multilineTextAlignment(.trailing)
+                    .lineLimit(1)
             }
         }
-        .foregroundStyle(.primary) // Prevents the "Location" label from turning blue.
+        .foregroundStyle(.primary)
         
-        // MODIFIED: Updated label to be more descriptive as requested.
         HStack {
-            Text("Pilot in Command: ")
-                .font(.callout)
+            Text("Pilot in Command")
             TextField("Name", text: $log.pilotInCommand)
                 .multilineTextAlignment(.trailing)
+                .lineLimit(1)
         }
     }
 }
 
 /// A reusable form section for adding/editing additional crew members.
 struct AdditionalCrewSection: View {
-    @Binding var log: FlightLog
-    @Binding var isUsingPMTC: Bool
-    @Binding var isUsingVO: Bool
+    @Binding var crew: [LoggedCrewMember]
+    @State private var showManageRolesSheet = false
+    @EnvironmentObject private var viewModel: AppViewModel
     
     var body: some View {
-        Toggle("PMTC Performed?", isOn: $isUsingPMTC.animation())
-        if isUsingPMTC {
-            TextField("PMTC Performed By", text: Binding($log.pmtcBy, default: ""))
+        if !crew.isEmpty {
+            ForEach(crew.indices, id: \.self) { index in
+                HStack {
+                    Text(crew[index].roleName)
+                        .lineLimit(1)
+                    TextField("Name", text: $crew[index].personName)
+                        .multilineTextAlignment(.trailing)
+                        .lineLimit(1)
+                }
+            }
         }
-        Toggle("Visual Observer Used?", isOn: $isUsingVO.animation())
-        if isUsingVO {
-            TextField("Visual Observer Name", text: Binding($log.visualObserver, default: ""))
+        
+        Button(action: { showManageRolesSheet.toggle() }) {
+            HStack {
+                Label("Manage Crew Roles", systemImage: "person.crop.circle.badge.plus")
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundColor(.secondary.opacity(0.5))
+            }
+            .foregroundColor(.accentColor) // **FIX**: Make the text and icon blue
+        }
+        .sheet(isPresented: $showManageRolesSheet) {
+            ManageCrewRolesView(crew: $crew)
         }
     }
 }
+
+/// A view for adding/removing crew roles for a specific flight.
+struct ManageCrewRolesView: View {
+    @Binding var crew: [LoggedCrewMember]
+    @State private var temporaryRoleName: String = ""
+    @EnvironmentObject private var viewModel: AppViewModel
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            List {
+                Section("Current Flight Crew") {
+                    if crew.isEmpty {
+                        Text("No crew members assigned.")
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(crew) { member in
+                        HStack {
+                            Text(member.roleName)
+                            Spacer()
+                            if !viewModel.userSettings.customCrewRoles.contains(where: { $0.name == member.roleName }) {
+                                Button("Make Default") {
+                                    viewModel.addCrewRole(name: member.roleName)
+                                }
+                                .buttonStyle(.borderless)
+                                .foregroundColor(.accentColor)
+                            }
+                        }
+                    }
+                    .onDelete { offsets in
+                        crew.remove(atOffsets: offsets)
+                    }
+                }
+                
+                Section("Add from Defaults") {
+                    ForEach(viewModel.userSettings.customCrewRoles.filter { role in
+                        !crew.contains(where: { $0.roleName == role.name })
+                    }) { role in
+                        Button(action: {
+                            crew.append(LoggedCrewMember(id: UUID(), roleName: role.name, personName: ""))
+                        }) {
+                            Label(role.name, systemImage: "plus.circle.fill")
+                        }
+                    }
+                }
+                
+                Section("Add Temporary Role for this Flight") {
+                    HStack {
+                        TextField("Temporary Role Name", text: $temporaryRoleName)
+                        Button("Add") {
+                            if !temporaryRoleName.isEmpty {
+                                crew.append(LoggedCrewMember(id: UUID(), roleName: temporaryRoleName, personName: ""))
+                                temporaryRoleName = ""
+                            }
+                        }
+                        .disabled(temporaryRoleName.isEmpty)
+                    }
+                }
+            }
+            .navigationTitle("Manage Flight Crew")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+/// A reusable form section for entering client information.
+struct ClientInfoSection: View {
+    @Binding var clientInfo: ClientInfo?
+
+    var body: some View {
+        let nonOptionalClientInfo = Binding($clientInfo, default: ClientInfo())
+        
+        HStack {
+            Text("Client Name")
+            TextField("Name", text: nonOptionalClientInfo.clientName)
+                .multilineTextAlignment(.trailing)
+                .lineLimit(1)
+        }
+        HStack {
+            Text("Project ID")
+            TextField("ID / Name", text: nonOptionalClientInfo.projectID)
+                .multilineTextAlignment(.trailing)
+                .lineLimit(1)
+        }
+        HStack {
+            Text("Contact Info")
+            TextField("Email/Phone", text: nonOptionalClientInfo.contactInfo)
+                .multilineTextAlignment(.trailing)
+                .lineLimit(1)
+        }
+    }
+}
+
 
 /// A reusable form section for editing mission notes.
 struct MissionNotesSection: View {
@@ -300,7 +407,6 @@ struct MissionNotesSection: View {
     
     var body: some View {
         TextField("Enter mission notes here...", text: $notes, axis: .vertical)
-             // MODIFIED: Removed the incorrect .lineLimit modifier.
             .frame(minHeight: 100, alignment: .top)
     }
 }
@@ -316,12 +422,13 @@ struct WeatherSection: View {
                 .autocapitalization(.allCharacters)
                 .disableAutocorrection(true)
                 .font(.system(.body, design: .monospaced))
-        
+            
             Button("Fetch") {
                 Task { await fetchAction() }
             }
             .disabled(weather.icao.count != 4)
         }
+        
         InfoRow(label: "Raw METAR", value: weather.metar, multiline: true)
         InfoRow(label: "Decoded METAR", value: weather.decodedMetar, multiline: true)
     }

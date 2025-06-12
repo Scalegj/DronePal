@@ -3,6 +3,7 @@ import SwiftUI
 /// A dashboard view for displaying user statistics and accessing global settings.
 struct StatsView: View {
     @EnvironmentObject var viewModel: AppViewModel
+    @State private var showAddRoleSheet = false
 
     var body: some View {
         NavigationStack {
@@ -31,31 +32,61 @@ struct StatsView: View {
                         Text("Pilot Information").font(.headline).foregroundStyle(.secondary)
                         StyledSection {
                             TextField("Pilot Name", text: $viewModel.userSettings.pilotName)
-                                .onChange(of: viewModel.userSettings.pilotName) { viewModel.saveUserSettings() }
                             Divider()
                             Picker("Pilot Type", selection: $viewModel.userSettings.pilotType) {
                                 ForEach(PilotType.allCases) { Text($0.rawValue).tag($0) }
                             }
                             .pickerStyle(.segmented)
-                            .onChange(of: viewModel.userSettings.pilotType) { viewModel.saveUserSettings() }
                         }
                         
                         if viewModel.userSettings.pilotType == .part107 {
                             Text("Part 107 Certificate Dates").font(.headline).foregroundStyle(.secondary)
                             StyledSection {
                                 DatePicker("Initial Issue Date", selection: $viewModel.userSettings.part107InitialCertificateDate, displayedComponents: .date)
-                                    .onChange(of: viewModel.userSettings.part107InitialCertificateDate) { viewModel.saveUserSettings() }
                                 Divider()
                                 DatePicker("Last Training/Exam Date", selection: $viewModel.userSettings.part107LastRecurrencyDate, displayedComponents: .date)
-                                    .onChange(of: viewModel.userSettings.part107LastRecurrencyDate) { viewModel.saveUserSettings() }
                             }
                         } else {
                             Text("Recreational Pilot (TRUST)").font(.headline).foregroundStyle(.secondary)
                             StyledSection {
                                 DatePicker("TRUST Completion Date", selection: $viewModel.userSettings.recreationalTRUSTDate, displayedComponents: .date)
-                                    .onChange(of: viewModel.userSettings.recreationalTRUSTDate) { viewModel.saveUserSettings() }
                             }
                         }
+
+                        Text("Default Crew Roles").font(.headline).foregroundStyle(.secondary)
+                        StyledSection {
+                            ForEach(viewModel.userSettings.customCrewRoles) { role in
+                                HStack {
+                                    Text(role.name)
+                                    Spacer()
+                                    Button(action: {
+                                        viewModel.deleteCrewRole(roleToDelete: role)
+                                    }) {
+                                        Image(systemName: "trash.circle.fill")
+                                            .foregroundColor(.red)
+                                            .imageScale(.large)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                if role.id != viewModel.userSettings.customCrewRoles.last?.id {
+                                    Divider()
+                                }
+                            }
+                            
+                            // **FIX**: Styled this button to match the Pre-Flight screen.
+                            Button(action: { showAddRoleSheet.toggle() }) {
+                                HStack {
+                                    Label("Add New Default Role", systemImage: "plus.circle.fill")
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption.weight(.bold))
+                                        .foregroundColor(.secondary.opacity(0.5))
+                                }
+                                .foregroundColor(.accentColor) // Make text and icon blue
+                            }
+                            .padding(.top, 8)
+                        }
+
                     }
                     .padding()
                 }
@@ -63,6 +94,14 @@ struct StatsView: View {
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Stats & Settings")
+            .toolbar {
+            }
+            .onDisappear {
+                viewModel.saveUserSettings()
+            }
+            .sheet(isPresented: $showAddRoleSheet) {
+                AddNewRoleView()
+            }
         }
     }
     
@@ -110,6 +149,39 @@ struct StatsView: View {
         return formatter.string(from: duration) ?? "0h 0m"
     }
 }
+
+/// A dedicated sheet view for adding a new default crew role.
+private struct AddNewRoleView: View {
+    @EnvironmentObject var viewModel: AppViewModel
+    @Environment(\.dismiss) var dismiss
+    @State private var newRoleName = ""
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                Section(header: Text("New Role Details")) {
+                    TextField("Role Name (e.g., Sensor Operator)", text: $newRoleName)
+                }
+            }
+            .navigationTitle("Add Default Role")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        if !newRoleName.isEmpty {
+                            viewModel.addCrewRole(name: newRoleName)
+                            dismiss()
+                        }
+                    }
+                    .disabled(newRoleName.isEmpty)
+                }
+            }
+        }
+    }
+}
+
 
 private struct StatCardView: View {
     let title: String

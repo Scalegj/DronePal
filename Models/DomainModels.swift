@@ -76,13 +76,68 @@ enum PilotType: String, Codable, CaseIterable, Identifiable {
     var id: String { self.rawValue }
 }
 
-struct UserSettings: Codable {
-    var pilotName: String = ""
-    var pilotType: PilotType = .part107
-    var part107InitialCertificateDate: Date = Date()
-    var part107LastRecurrencyDate: Date = Date()
-    var recreationalTRUSTDate: Date = Date()
+/// A struct to represent a user-defined crew role.
+struct CrewRole: Identifiable, Codable, Hashable {
+    let id: UUID
+    var name: String
 }
+
+struct UserSettings: Codable {
+    var pilotName: String
+    var pilotType: PilotType
+    var part107InitialCertificateDate: Date
+    var part107LastRecurrencyDate: Date
+    var recreationalTRUSTDate: Date
+    var customCrewRoles: [CrewRole]
+
+    // **FIX START**: Implement custom decoder and encoder for UserSettings
+    
+    enum CodingKeys: String, CodingKey {
+        case pilotName, pilotType, part107InitialCertificateDate, part107LastRecurrencyDate, recreationalTRUSTDate, customCrewRoles
+    }
+
+    // Default initializer
+    init(pilotName: String = "", pilotType: PilotType = .part107, part107InitialCertificateDate: Date = Date(), part107LastRecurrencyDate: Date = Date(), recreationalTRUSTDate: Date = Date(), customCrewRoles: [CrewRole] = [
+            CrewRole(id: UUID(), name: "Person Manipulating the Controls"),
+            CrewRole(id: UUID(), name: "Visual Observer")
+        ]) {
+        self.pilotName = pilotName
+        self.pilotType = pilotType
+        self.part107InitialCertificateDate = part107InitialCertificateDate
+        self.part107LastRecurrencyDate = part107LastRecurrencyDate
+        self.recreationalTRUSTDate = recreationalTRUSTDate
+        self.customCrewRoles = customCrewRoles
+    }
+    
+    // Custom Decoder
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        pilotName = try container.decodeIfPresent(String.self, forKey: .pilotName) ?? ""
+        pilotType = try container.decodeIfPresent(PilotType.self, forKey: .pilotType) ?? .part107
+        part107InitialCertificateDate = try container.decodeIfPresent(Date.self, forKey: .part107InitialCertificateDate) ?? Date()
+        part107LastRecurrencyDate = try container.decodeIfPresent(Date.self, forKey: .part107LastRecurrencyDate) ?? Date()
+        recreationalTRUSTDate = try container.decodeIfPresent(Date.self, forKey: .recreationalTRUSTDate) ?? Date()
+        
+        // If 'customCrewRoles' key is missing, provide the default value.
+        customCrewRoles = try container.decodeIfPresent([CrewRole].self, forKey: .customCrewRoles) ?? [
+            CrewRole(id: UUID(), name: "Person Manipulating the Controls"),
+            CrewRole(id: UUID(), name: "Visual Observer")
+        ]
+    }
+    
+    // Custom Encoder
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(pilotName, forKey: .pilotName)
+        try container.encode(pilotType, forKey: .pilotType)
+        try container.encode(part107InitialCertificateDate, forKey: .part107InitialCertificateDate)
+        try container.encode(part107LastRecurrencyDate, forKey: .part107LastRecurrencyDate)
+        try container.encode(recreationalTRUSTDate, forKey: .recreationalTRUSTDate)
+        try container.encode(customCrewRoles, forKey: .customCrewRoles)
+    }
+    // **FIX END**
+}
+
 
 struct FlightSegment: Identifiable, Codable, Hashable {
     let id: UUID
@@ -94,6 +149,20 @@ struct FlightSegment: Identifiable, Codable, Hashable {
     }
 }
 
+/// A struct to hold client and project information for a flight.
+struct ClientInfo: Codable, Hashable {
+    var clientName: String = ""
+    var projectID: String = ""
+    var contactInfo: String = ""
+}
+
+/// A struct to log a specific crew member for a flight.
+struct LoggedCrewMember: Identifiable, Codable, Hashable {
+    let id: UUID
+    var roleName: String
+    var personName: String
+}
+
 struct FlightLog: Identifiable, Codable {
     let id: UUID
     var date: Date
@@ -102,8 +171,8 @@ struct FlightLog: Identifiable, Codable {
     var pilotInCommand: String
     var missionNotes: String
     var weather: WeatherData
-    var pmtcBy: String?
-    var visualObserver: String?
+    var crew: [LoggedCrewMember]
+    var clientInfo: ClientInfo?
     var loggedRemoteIDs: [LoggedRemoteID]
     var completedChecklist: [CompletedChecklistItem]
     var segments: [FlightSegment]
@@ -114,7 +183,18 @@ struct FlightLog: Identifiable, Codable {
         segments.reduce(0) { $0 + $1.duration }
     }
     
-    init(id: UUID = UUID(), date: Date = Date(), aircraftID: UUID? = nil, location: String = "", pilotInCommand: String = "", missionNotes: String = "", weather: WeatherData = WeatherData(), pmtcBy: String? = nil, visualObserver: String? = nil, loggedRemoteIDs: [LoggedRemoteID] = [], completedChecklist: [CompletedChecklistItem] = [], segments: [FlightSegment] = [], flightArea: FlightArea? = nil, trashedDate: Date? = nil) {
+    // Custom Codable implementation for backward compatibility
+    
+    enum CodingKeys: String, CodingKey {
+        case id, date, aircraftID, location, pilotInCommand, missionNotes, weather
+        case crew, clientInfo
+        case loggedRemoteIDs, completedChecklist, segments, flightArea, trashedDate
+        // Old keys for migration
+        case pmtcBy, visualObserver
+    }
+
+    // Memberwise initializer for creating new logs in code
+    init(id: UUID = UUID(), date: Date = Date(), aircraftID: UUID? = nil, location: String = "", pilotInCommand: String = "", missionNotes: String = "", weather: WeatherData = WeatherData(), crew: [LoggedCrewMember] = [], clientInfo: ClientInfo? = ClientInfo(), loggedRemoteIDs: [LoggedRemoteID] = [], completedChecklist: [CompletedChecklistItem] = [], segments: [FlightSegment] = [], flightArea: FlightArea? = nil, trashedDate: Date? = nil) {
         self.id = id
         self.date = date
         self.aircraftID = aircraftID
@@ -122,13 +202,70 @@ struct FlightLog: Identifiable, Codable {
         self.pilotInCommand = pilotInCommand
         self.missionNotes = missionNotes
         self.weather = weather
-        self.pmtcBy = pmtcBy
-        self.visualObserver = visualObserver
+        self.crew = crew
+        self.clientInfo = clientInfo
         self.loggedRemoteIDs = loggedRemoteIDs
         self.completedChecklist = completedChecklist
         self.segments = segments
         self.flightArea = flightArea
         self.trashedDate = trashedDate
+    }
+
+    // Custom decoder
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        // Decode all standard properties
+        id = try container.decode(UUID.self, forKey: .id)
+        date = try container.decode(Date.self, forKey: .date)
+        aircraftID = try container.decodeIfPresent(UUID.self, forKey: .aircraftID)
+        location = try container.decode(String.self, forKey: .location)
+        pilotInCommand = try container.decode(String.self, forKey: .pilotInCommand)
+        missionNotes = try container.decode(String.self, forKey: .missionNotes)
+        weather = try container.decode(WeatherData.self, forKey: .weather)
+        loggedRemoteIDs = try container.decode([LoggedRemoteID].self, forKey: .loggedRemoteIDs)
+        completedChecklist = try container.decode([CompletedChecklistItem].self, forKey: .completedChecklist)
+        segments = try container.decode([FlightSegment].self, forKey: .segments)
+        flightArea = try container.decodeIfPresent(FlightArea.self, forKey: .flightArea)
+        trashedDate = try container.decodeIfPresent(Date.self, forKey: .trashedDate)
+        
+        // Handle 'clientInfo' (new and optional)
+        clientInfo = try container.decodeIfPresent(ClientInfo.self, forKey: .clientInfo)
+
+        // Handle 'crew' by first checking for the new key, then falling back to migrate old keys
+        if let decodedCrew = try? container.decodeIfPresent([LoggedCrewMember].self, forKey: .crew) {
+            // New format data found, use it directly
+            self.crew = decodedCrew
+        } else {
+            // 'crew' key not found, this is old data. Build the crew list from old properties.
+            var migratedCrew: [LoggedCrewMember] = []
+            if let pmtcName = try container.decodeIfPresent(String.self, forKey: .pmtcBy), !pmtcName.isEmpty {
+                migratedCrew.append(LoggedCrewMember(id: UUID(), roleName: "Person Manipulating the Controls", personName: pmtcName))
+            }
+            if let voName = try container.decodeIfPresent(String.self, forKey: .visualObserver), !voName.isEmpty {
+                migratedCrew.append(LoggedCrewMember(id: UUID(), roleName: "Visual Observer", personName: voName))
+            }
+            self.crew = migratedCrew
+        }
+    }
+    
+    // Custom encoder to satisfy the 'Encodable' conformance
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(date, forKey: .date)
+        try container.encodeIfPresent(aircraftID, forKey: .aircraftID)
+        try container.encode(location, forKey: .location)
+        try container.encode(pilotInCommand, forKey: .pilotInCommand)
+        try container.encode(missionNotes, forKey: .missionNotes)
+        try container.encode(weather, forKey: .weather)
+        try container.encode(crew, forKey: .crew)
+        try container.encodeIfPresent(clientInfo, forKey: .clientInfo)
+        try container.encode(loggedRemoteIDs, forKey: .loggedRemoteIDs)
+        try container.encode(completedChecklist, forKey: .completedChecklist)
+        try container.encode(segments, forKey: .segments)
+        try container.encodeIfPresent(flightArea, forKey: .flightArea)
+        try container.encodeIfPresent(trashedDate, forKey: .trashedDate)
     }
 }
 

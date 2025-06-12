@@ -77,8 +77,6 @@ private struct PreFlightSetupView: View {
     @EnvironmentObject var viewModel: AppViewModel
     let onProceed: () -> Void
     
-    @State private var isUsingPMTC = false
-    @State private var isUsingVO = false
     @State private var selectedChecklistID: UUID?
     
     var body: some View {
@@ -88,8 +86,11 @@ private struct PreFlightSetupView: View {
                     Text("Flight Details").font(.headline).foregroundStyle(.secondary)
                     StyledSection { FlightDetailsSection(log: $viewModel.activeLog) }
                     
+                    Text("Client & Project").font(.headline).foregroundStyle(.secondary)
+                    StyledSection { ClientInfoSection(clientInfo: $viewModel.activeLog.clientInfo) }
+                    
                     Text("Additional Crew").font(.headline).foregroundStyle(.secondary)
-                    StyledSection { AdditionalCrewSection(log: $viewModel.activeLog, isUsingPMTC: $isUsingPMTC, isUsingVO: $isUsingVO) }
+                    StyledSection { AdditionalCrewSection(crew: $viewModel.activeLog.crew) }
                     
                     Text("Pre-flight Checklist").font(.headline).foregroundStyle(.secondary)
                     StyledSection { checklistSection }
@@ -173,11 +174,7 @@ private struct PreFlightSetupView: View {
     }
 
     private func syncStateWithViewModel() {
-        let log = viewModel.activeLog
-        isUsingPMTC = !(log.pmtcBy?.isEmpty ?? true)
-        isUsingVO = !(log.visualObserver?.isEmpty ?? true)
-        
-        if let firstItem = log.completedChecklist.first,
+        if let firstItem = viewModel.activeLog.completedChecklist.first,
            let checklist = viewModel.checklists.first(where: { $0.items.contains(where: { $0.id == firstItem.id }) }) {
             selectedChecklistID = checklist.id
         }
@@ -329,9 +326,6 @@ private struct InFlightLoggingView: View {
 private struct PostFlightReviewView: View {
     @EnvironmentObject var viewModel: AppViewModel
     
-    @State private var isUsingPMTC = false
-    @State private var isUsingVO = false
-    
     var body: some View {
         VStack {
             ScrollView {
@@ -350,8 +344,11 @@ private struct PostFlightReviewView: View {
                     Text("Flight Details").font(.headline).foregroundStyle(.secondary)
                     StyledSection { FlightDetailsSection(log: $viewModel.activeLog) }
 
+                    Text("Client & Project").font(.headline).foregroundStyle(.secondary)
+                    StyledSection { ClientInfoSection(clientInfo: $viewModel.activeLog.clientInfo) }
+                    
                     Text("Additional Crew").font(.headline).foregroundStyle(.secondary)
-                    StyledSection { AdditionalCrewSection(log: $viewModel.activeLog, isUsingPMTC: $isUsingPMTC, isUsingVO: $isUsingVO) }
+                    StyledSection { AdditionalCrewSection(crew: $viewModel.activeLog.crew) }
                     
                     Text("Mission Notes").font(.headline).foregroundStyle(.secondary)
                     StyledSection { MissionNotesSection(notes: $viewModel.activeLog.missionNotes) }
@@ -366,11 +363,6 @@ private struct PostFlightReviewView: View {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save Flight", action: viewModel.saveAndStopLogging).bold()
             }
-        }
-        .onAppear {
-             let log = viewModel.activeLog
-             isUsingPMTC = !(log.pmtcBy?.isEmpty ?? true)
-             isUsingVO = !(log.visualObserver?.isEmpty ?? true)
         }
     }
 }

@@ -85,6 +85,9 @@ class AppViewModel: ObservableObject {
         activeLog = FlightLog()
         activeLog.pilotInCommand = userSettings.pilotName
         activeLog.aircraftID = drones.first?.id
+        activeLog.clientInfo = ClientInfo()
+        // **FIX**: Crew now starts empty. It will be populated via the Manage Crew Roles screen.
+        activeLog.crew = []
         
         if let firstChecklist = checklists.first {
             activeLog.completedChecklist = firstChecklist.items.map {
@@ -127,11 +130,15 @@ class AppViewModel: ObservableObject {
     // MARK: - Data Persistence (CRUD Operations)
     
     private func saveLog(_ log: FlightLog) {
-        if let index = self.flightLogs.firstIndex(where: { $0.id == log.id }) {
-            self.flightLogs[index] = log
+        // Before saving, remove any crew members with empty names
+        var logToSave = log
+        logToSave.crew.removeAll { $0.personName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+        if let index = self.flightLogs.firstIndex(where: { $0.id == logToSave.id }) {
+            self.flightLogs[index] = logToSave
         } else {
             // Sort by date descending when inserting a new log.
-            self.flightLogs.append(log)
+            self.flightLogs.append(logToSave)
             self.flightLogs.sort { $0.date > $1.date }
         }
         saveData()
@@ -194,10 +201,18 @@ class AppViewModel: ObservableObject {
     }
     
     func saveUserSettings() {
-        // This function now simply triggers a save of the entire app's data.
         saveData()
     }
     
+    func addCrewRole(name: String) {
+        let newRole = CrewRole(id: UUID(), name: name)
+        userSettings.customCrewRoles.append(newRole)
+    }
+    
+    func deleteCrewRole(roleToDelete: CrewRole) {
+        userSettings.customCrewRoles.removeAll { $0.id == roleToDelete.id }
+    }
+
     func deleteDrone(at offsets: IndexSet) {
         drones.remove(atOffsets: offsets)
         saveData()
@@ -269,13 +284,11 @@ class AppViewModel: ObservableObject {
     }
     
     func mostFlownDrone() -> Drone? {
-        // CORRECTION: Explicitly define the dictionary type to resolve ambiguity.
         let flightCounts = activeFlightLogs.reduce(into: [UUID: Int]()) { counts, log in
             guard let id = log.aircraftID else { return }
             counts[id, default: 0] += 1
         }
         
-        // Find the drone ID with the highest count
         guard let topDroneID = flightCounts.max(by: { $0.value < $1.value })?.key else {
             return drones.first
         }
@@ -334,13 +347,11 @@ class AppViewModel: ObservableObject {
     }
     
     private func decodeMetar(raw: String) -> String {
-        // This is a simplistic parser. For production, a more robust solution
-        // like regex or a dedicated library would be better.
+        // This is a simplistic parser.
         var decodedParts: [String] = []
         let components = raw.split(separator: " ").map { String($0) }
         
         if !components.isEmpty {
-            // Simplified logic as the original was incomplete
             decodedParts.append("Station: \(components.first ?? "N/A")")
         }
         return decodedParts.joined(separator: "\n")
