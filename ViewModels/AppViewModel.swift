@@ -25,20 +25,39 @@ class AppViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 
     init() {
-        // Load all data from the JSON file on startup.
-        loadData()
+        Task {
+            // 1. Await the setup of the persistence service to connect to iCloud/local storage.
+            await persistenceService.setup()
+            
+            // 2. Load data from the determined source.
+            loadData()
+            
+            // 3. Perform other startup tasks.
+            purgeStaleTrashedLogs()
+            
+            // 4. **CRITICAL FIX**: Determine if setup is needed based on loaded data.
+            // The source of truth is now the actual user data, not a temporary local flag.
+            if !self.userSettings.pilotName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                // If we successfully loaded a pilot name, it means data exists from a
+                // previous session (on this or another iCloud device).
+                // Therefore, we do NOT need to run the setup flow.
+                self.needsSetup = false
+                
+                // For consistency, we also update the local UserDefaults flag. This ensures
+                // a smooth experience if iCloud is ever offline temporarily on future launches.
+                UserDefaults.standard.set(true, forKey: Constants.UserDefaultsKeys.setupCompleted)
+            } else {
+                // If no pilot name was loaded, the user is either brand new or their
+                // iCloud data is empty. In this case, we must show the setup screen.
+                self.needsSetup = true
+            }
+        }
         
-        // UserDefaults is still appropriate for simple, non-critical flags like this.
-        self.needsSetup = !UserDefaults.standard.bool(forKey: Constants.UserDefaultsKeys.setupCompleted)
-
         // Propagate changes from the scanner to this ViewModel's subscribers.
         bluetoothScanner.objectWillChange
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
-            
-        // Clean up stale items from the trash on app launch.
-        purgeStaleTrashedLogs()
     }
     
     // MARK: - Data Persistence
@@ -53,7 +72,6 @@ class AppViewModel: ObservableObject {
     }
     
     /// Collects the entire application state and saves it to the JSON file.
-    /// This is the single source of truth for saving data.
     private func saveData() {
         let currentData = AppData(
             flightLogs: self.flightLogs,
@@ -86,7 +104,6 @@ class AppViewModel: ObservableObject {
         activeLog.pilotInCommand = userSettings.pilotName
         activeLog.aircraftID = drones.first?.id
         activeLog.clientInfo = ClientInfo()
-        // **FIX**: Crew now starts empty. It will be populated via the Manage Crew Roles screen.
         activeLog.crew = []
         
         if let firstChecklist = checklists.first {
@@ -105,7 +122,6 @@ class AppViewModel: ObservableObject {
         stopTelemetryTimer()
         isLoggingFlight = false
         bluetoothScanner.stopScanning()
-        // No save here, the log was never added to the main array.
     }
 
     func saveAndStopLogging() {
@@ -130,14 +146,12 @@ class AppViewModel: ObservableObject {
     // MARK: - Data Persistence (CRUD Operations)
     
     private func saveLog(_ log: FlightLog) {
-        // Before saving, remove any crew members with empty names
         var logToSave = log
         logToSave.crew.removeAll { $0.personName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
         if let index = self.flightLogs.firstIndex(where: { $0.id == logToSave.id }) {
             self.flightLogs[index] = logToSave
         } else {
-            // Sort by date descending when inserting a new log.
             self.flightLogs.append(logToSave)
             self.flightLogs.sort { $0.date > $1.date }
         }
