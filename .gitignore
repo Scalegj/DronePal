@@ -1,0 +1,87 @@
+# .gitignore for Xcode 16.4 Swift Project
+
+# ===================================================================
+# macOS General
+# ===================================================================
+# Standard macOS folder attributes and temp files
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+
+# Thumbnails and Spotlight metadata
+._*
+.Spotlight-V100
+.Trashes
+
+# ===================================================================
+# Xcode
+# ===================================================================
+
+# Build artifacts and derived data
+# These directories contain all the compiled code and intermediate files.
+# They are generated on each build and can be very large.
+/build/
+/DerivedData/
+
+# Project and Workspace settings
+# These files store your personal Xcode setup, like open files,
+# window positions, and breakpoints. They shouldn't be shared.
+*.xcodeproj/*.xcworkspace
+!*.xcodeproj/project.pbxproj
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Scheme Management
+# User-specific schemes should be ignored. Shared schemes are typically committed.
+*.xcscheme
+!*.xcworkspace/xcshareddata/xcschemes/
+*.xcschememanagement.plist
+
+# Swift Package Manager
+# The .build directory contains fetched and compiled package dependencies.
+# The Package.resolved file locks dependency versions. It's good practice
+# for teams to commit this file to ensure consistent builds.
+# To commit it, remove the line below.
+*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+/.swiftpm/
+/.build/
+
+# Xcode Playgrounds
+# Ignore user-specific playground data.
+timeline.xctimeline
+playground.xcworkspace
+
+# Instrumentation and Testing
+# Ignore code coverage and profiling data.
+*.gcno
+*.gcda
+*.gcov
+*.profraw
+*.profdata
+
+# Temporary Files
+# General temp files from editors or processes.
+*.moved-aside
+*.swp
+*~
+
+# App Archives
+# These are generated when you archive your app for distribution.
+*.ipa
+*.app
+
+# ===================================================================
+# Persistence & Secrets (Good Practices)
+# ===================================================================
+# Your PersistenceService saves to DronePalData.json. You should decide
+# if this file should be in git. For user-specific data, it should be ignored.
+# If it's default or seed data, you might commit it.
+#
+# To ignore it, uncomment the following line:
+# DronePalData.json
+
+# It's also a good practice to store sensitive information like API keys
+# in a file that is not checked into git. For example:
+# Secrets.xcconfig
+# keys.plist
