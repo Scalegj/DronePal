@@ -8,7 +8,15 @@ struct FlightLogListView: View {
     var body: some View {
         Group {
             if viewModel.activeFlightLogs.isEmpty {
-                ContentUnavailableView("No Flights Logged", systemImage: "airplane.departure", description: Text("Tap the + button to add your first flight log."))
+                if #available(iOS 17.0, *) {
+                    ContentUnavailableView("No Flights Logged", systemImage: "airplane.departure", description: Text("Tap the + button to add your first flight log."))
+                } else {
+                    LegacyContentUnavailableView {
+                        Label("No Flights Logged", systemImage: "airplane.departure")
+                    } description: {
+                        Text("Tap the + button to add your first flight log.")
+                    }
+                }
             } else {
                 List {
                     ForEach(viewModel.activeFlightLogs) { log in
@@ -51,13 +59,13 @@ struct FlightLogRowView: View {
     let log: FlightLog
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) { // MODIFICATION: Reduced spacing
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
                 VStack(alignment: .leading) {
                     Text(viewModel.droneForID(log.aircraftID)?.displayName ?? "Unknown Aircraft")
-                        .font(.title3.bold()) // MODIFICATION: Adjusted font
+                        .font(.title3.bold())
                     Text(log.location)
-                        .font(.caption) // MODIFICATION: Adjusted font
+                        .font(.caption)
                         .opacity(0.8)
                 }
                 Spacer()
@@ -71,23 +79,23 @@ struct FlightLogRowView: View {
             HStack(alignment: .bottom) {
                 VStack(alignment: .leading) {
                     Text("DATE")
-                        .font(.caption2.weight(.semibold)) // MODIFICATION: Adjusted font
+                        .font(.caption2.weight(.semibold))
                         .opacity(0.8)
                     Text(log.date, style: .date)
-                        .font(.subheadline.weight(.medium)) // MODIFICATION: Adjusted font
+                        .font(.subheadline.weight(.medium))
                 }
                 Spacer()
                 VStack(alignment: .trailing) {
                     Text("DURATION")
-                        .font(.caption2.weight(.semibold)) // MODIFICATION: Adjusted font
+                        .font(.caption2.weight(.semibold))
                         .opacity(0.8)
                     Text(Formatters.durationAbbreviated.string(from: log.flightDuration) ?? "0s")
-                        .font(.subheadline.weight(.medium)) // MODIFICATION: Adjusted font
+                        .font(.subheadline.weight(.medium))
                 }
             }
         }
         .padding()
-        .frame(height: 120) // MODIFICATION: Reduced height
+        .frame(height: 120)
         .foregroundColor(.white)
         .background(
             LinearGradient(
@@ -108,11 +116,19 @@ struct TrashView: View {
     var body: some View {
         Group {
             if viewModel.trashedFlightLogs.isEmpty {
-                ContentUnavailableView(
-                    "Trash is Empty",
-                    systemImage: "trash.slash.fill",
-                    description: Text("Discarded flights will appear here. Items are automatically deleted after 30 days.")
-                )
+                if #available(iOS 17.0, *) {
+                    ContentUnavailableView(
+                        "Trash is Empty",
+                        systemImage: "trash.slash.fill",
+                        description: Text("Discarded flights will appear here. Items are automatically deleted after 30 days.")
+                    )
+                } else {
+                    LegacyContentUnavailableView {
+                        Label("Trash is Empty", systemImage: "trash.slash.fill")
+                    } description: {
+                        Text("Discarded flights will appear here. Items are automatically deleted after 30 days.")
+                    }
+                }
             } else {
                 List {
                     ForEach(viewModel.trashedFlightLogs) { log in
@@ -197,21 +213,29 @@ struct FlightDetailView: View {
                 if let flightArea = log.flightArea, !flightArea.boundary.isEmpty {
                     Text("Flight Area").font(.headline).foregroundStyle(.secondary)
                     StyledSection {
-                        if let region = MKCoordinateRegion(coordinates: flightArea.boundary.map { $0.clLocationCoordinate2D }) {
-                            Map(initialPosition: .region(region)) {
-                                let coordinates = flightArea.boundary.map { $0.clLocationCoordinate2D }
-                                MapPolygon(coordinates: coordinates)
-                                    .foregroundStyle(.blue.opacity(0.3))
-                                MapPolygon(coordinates: coordinates)
-                                    .stroke(.blue, lineWidth: 2)
+                        if #available(iOS 17.0, *) {
+                            if let region = MKCoordinateRegion(coordinates: flightArea.boundary.map { $0.clLocationCoordinate2D }) {
+                                Map(initialPosition: .region(region)) {
+                                    let coordinates = flightArea.boundary.map { $0.clLocationCoordinate2D }
+                                    MapPolygon(coordinates: coordinates)
+                                        .foregroundStyle(.blue.opacity(0.3))
+                                    MapPolygon(coordinates: coordinates)
+                                        .stroke(.blue, lineWidth: 2)
+                                }
+                                .frame(height: 250)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                .allowsHitTesting(false)
                             }
-                            .frame(height: 250)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                            .allowsHitTesting(false)
-                            
-                            Divider()
-                            InfoRow(label: "Max AGL", value: "\(Int(flightArea.maxAGL)) ft")
+                        } else {
+                            let points = flightArea.boundary.map { $0.clLocationCoordinate2D }
+                            LegacyMapView(drawnPoints: .constant(points), userLocation: .constant(nil))
+                                .frame(height: 250)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                .disabled(true)
                         }
+                        
+                        Divider()
+                        InfoRow(label: "Max AGL", value: "\(Int(flightArea.maxAGL)) ft")
                     }
                 }
 
@@ -291,7 +315,6 @@ struct FlightDetailView: View {
                 
                 Text("Mission Notes").font(.headline).foregroundStyle(.secondary)
                 StyledSection {
-                    // MODIFIED: Replaced the misuse of InfoRow with a simple Text view to fix the compiler error.
                     Text(log.missionNotes.isEmpty ? "No notes." : log.missionNotes)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }

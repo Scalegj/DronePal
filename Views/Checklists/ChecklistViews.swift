@@ -14,8 +14,16 @@ struct ChecklistListView: View {
                 .padding()
 
             if viewModel.checklists.isEmpty {
-                ContentUnavailableView("No Checklists", systemImage: "checklist", description: Text("Tap the + button to create your first pre-flight checklist."))
-                .frame(maxHeight: .infinity)
+                if #available(iOS 17.0, *) {
+                    ContentUnavailableView("No Checklists", systemImage: "checklist", description: Text("Tap the + button to create your first pre-flight checklist."))
+                        .frame(maxHeight: .infinity)
+                } else {
+                    LegacyContentUnavailableView {
+                        Label("No Checklists", systemImage: "checklist")
+                    } description: {
+                        Text("Tap the + button to create your first pre-flight checklist.")
+                    }
+                }
             } else {
                 List {
                     ForEach(sortedChecklists) { checklist in

@@ -114,7 +114,6 @@ private struct PreFlightSetupView: View {
             if viewModel.checklists.isEmpty {
                 Text("No checklists available.").foregroundStyle(.secondary)
             } else {
-                // MODIFIED: Replaced Picker with a Menu for a better layout.
                 HStack {
                     Text("Checklist")
                     Spacer()
@@ -128,9 +127,13 @@ private struct PreFlightSetupView: View {
                             .foregroundColor(.secondary)
                     }
                 }
-                .onChange(of: selectedChecklistID) {
-                    updateCompletedChecklist(for: selectedChecklistID)
-                }
+                // --- START CORRECTION ---
+                // Using the explicit 'perform' label to avoid ambiguity and ensure
+                // the iOS 14+ version of onChange is used.
+                .onChange(of: selectedChecklistID, perform: { newValue in
+                    updateCompletedChecklist(for: newValue)
+                })
+                // --- END CORRECTION ---
                 
                 if selectedChecklistID != nil && !viewModel.activeLog.completedChecklist.isEmpty {
                     Divider()
@@ -288,7 +291,6 @@ private struct InFlightLoggingView: View {
     }
     
     private var remoteIDSection: some View {
-        // MODIFIED: Wrapped in a VStack with Dividers to ensure consistent full-width layout.
         VStack(alignment: .leading, spacing: 12) {
             if !viewModel.activeLog.loggedRemoteIDs.isEmpty {
                 ForEach(viewModel.activeLog.loggedRemoteIDs) { rid in

@@ -13,10 +13,18 @@ struct RemoteIDScannerView: View {
                     Text("Scanning for Drones...").foregroundStyle(.secondary)
                 }
             } else if viewModel.bluetoothScanner.deviceListForUI.isEmpty {
-                ContentUnavailableView {
-                    Label("No Drones Found", systemImage: "antenna.radiowaves.left.and.right.slash")
-                } description: {
-                    Text("No broadcasting Remote ID signals detected. Ensure your drone is powered on and broadcasting.")
+                if #available(iOS 17.0, *) {
+                    ContentUnavailableView {
+                        Label("No Drones Found", systemImage: "antenna.radiowaves.left.and.right.slash")
+                    } description: {
+                        Text("No broadcasting Remote ID signals detected. Ensure your drone is powered on and broadcasting.")
+                    }
+                } else {
+                    LegacyContentUnavailableView {
+                        Label("No Drones Found", systemImage: "antenna.radiowaves.left.and.right.slash")
+                    } description: {
+                        Text("No broadcasting Remote ID signals detected. Ensure your drone is powered on and broadcasting.")
+                    }
                 }
             } else {
                 List(viewModel.bluetoothScanner.deviceListForUI) { device in

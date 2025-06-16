@@ -63,40 +63,78 @@ class PersistenceService {
         }
     }
 
-    /// Loads all app data from the JSON file.
+    /// Loads all app data from the JSON file using NSFileCoordinator.
     func load() -> AppData {
         guard let url = self.fileURL else {
-            // This message will now only appear if setup() is not awaited properly.
             AppLogger.persistence.error("File URL not available during load. The setup() method must be awaited before loading.")
             return AppData.empty
         }
 
+        let coordinator = NSFileCoordinator()
+        var error: NSError?
+        var loadedData: Data?
+
+        // Use a file coordinator to safely read from the iCloud location.
+        coordinator.coordinate(readingItemAt: url, options: .withoutChanges, error: &error) { (readURL) in
+            do {
+                // Check if the file exists before trying to read.
+                if FileManager.default.fileExists(atPath: readURL.path) {
+                    loadedData = try Data(contentsOf: readURL)
+                }
+            } catch let fileError {
+                AppLogger.persistence.error("Failed to read data inside coordinator: \(fileError.localizedDescription)")
+            }
+        }
+        
+        if let error = error {
+            // A "file not found" error (code 260) is expected on first launch and not a critical issue.
+            if (error as NSError).domain == NSCocoaErrorDomain && (error as NSError).code == 260 {
+                AppLogger.persistence.info("Data file does not exist yet. This is normal on first launch.")
+            } else {
+                AppLogger.persistence.warning("File coordinator error on load: \(error.localizedDescription)")
+            }
+            return AppData.empty
+        }
+        
+        guard let data = loadedData else {
+            // This is the common case for a new device connecting to iCloud where the file hasn't synced yet.
+            AppLogger.persistence.info("Could not load data, file might not exist or has not been downloaded yet.")
+            return AppData.empty
+        }
+
         do {
-            let data = try Data(contentsOf: url)
             let appData = try JSONDecoder().decode(AppData.self, from: data)
             AppLogger.persistence.info("Successfully loaded data from \(url.path)")
             return appData
-        } catch {
-            AppLogger.persistence.warning("Could not load data, returning empty state. Error: \(error)")
+        } catch let decodeError {
+            AppLogger.persistence.warning("Could not decode data, returning empty state. Error: \(decodeError)")
             return AppData.empty
         }
     }
 
-    /// Saves all app data to the JSON file on a background thread.
+    /// Saves all app data to the JSON file using NSFileCoordinator.
     func save(appData: AppData) {
         guard let url = self.fileURL else {
             AppLogger.persistence.error("File URL not available. Cannot save data.")
             return
         }
 
-        Task(priority: .background) {
+        let coordinator = NSFileCoordinator()
+        var error: NSError?
+        
+        // Use a file coordinator to safely write to the iCloud location. This handles its own background threading.
+        coordinator.coordinate(writingItemAt: url, options: .forReplacing, error: &error) { (newURL) in
             do {
                 let data = try JSONEncoder().encode(appData)
-                try data.write(to: url, options: .atomic)
-                AppLogger.persistence.info("Successfully saved data to \(url.path)")
-            } catch {
-                AppLogger.persistence.error("Failed to save data: \(error.localizedDescription)")
+                try data.write(to: newURL, options: .atomic)
+                AppLogger.persistence.info("Successfully saved data via coordinator to \(newURL.path)")
+            } catch let writeError {
+                AppLogger.persistence.error("Failed to save data inside coordinator: \(writeError.localizedDescription)")
             }
+        }
+        
+        if let error = error {
+            AppLogger.persistence.error("File coordinator error on save: \(error.localizedDescription)")
         }
     }
 }

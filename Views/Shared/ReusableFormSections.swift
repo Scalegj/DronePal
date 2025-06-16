@@ -28,13 +28,137 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     }
 }
 
+// MARK: - Legacy Map View for iOS 16
+struct LegacyMapView: UIViewRepresentable {
+    @Binding var drawnPoints: [CLLocationCoordinate2D]
+    @Binding var userLocation: CLLocation?
+    
+    func makeUIView(context: Context) -> MKMapView {
+        let mapView = MKMapView()
+        mapView.delegate = context.coordinator
+        mapView.showsUserLocation = true
+        
+        let gestureRecognizer = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
+        mapView.addGestureRecognizer(gestureRecognizer)
+        
+        return mapView
+    }
+    
+    func updateUIView(_ uiView: MKMapView, context: Context) {
+        uiView.removeOverlays(uiView.overlays)
+        if !drawnPoints.isEmpty {
+            let polygon = MKPolygon(coordinates: &drawnPoints, count: drawnPoints.count)
+            uiView.addOverlay(polygon)
+        }
+        
+        if let location = userLocation, !context.coordinator.initialLocationSet {
+            uiView.setRegion(MKCoordinateRegion(center: location.coordinate, span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)), animated: true)
+            context.coordinator.initialLocationSet = true
+        }
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, MKMapViewDelegate {
+        var parent: LegacyMapView
+        var initialLocationSet = false
+
+        init(_ parent: LegacyMapView) {
+            self.parent = parent
+        }
+        
+        @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+            let mapView = gesture.view as! MKMapView
+            let touchPoint = gesture.location(in: mapView)
+            let coordinate = mapView.convert(touchPoint, toCoordinateFrom: mapView)
+            parent.drawnPoints.append(coordinate)
+        }
+        
+        func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            if let polygon = overlay as? MKPolygon {
+                let renderer = MKPolygonRenderer(polygon: polygon)
+                renderer.fillColor = UIColor.blue.withAlphaComponent(0.3)
+                renderer.strokeColor = .blue
+                renderer.lineWidth = 2
+                return renderer
+            }
+            return MKOverlayRenderer()
+        }
+        
+        func mapView(_ mapView: MKMapView, didUpdate userLocation: MKUserLocation) {
+            parent.userLocation = userLocation.location
+        }
+    }
+}
+
+
+// MARK: - iOS 17+ Map View Content
+@available(iOS 17.0, *)
+private struct FlightAreaMapViewContent: View {
+    @Binding var log: FlightLog
+    @ObservedObject var locationManager: LocationManager
+    
+    @Binding var drawnPoints: [CLLocationCoordinate2D]
+    @Binding var initialLocationSet: Bool
+    
+    @State private var position: MapCameraPosition = .automatic
+    
+    var body: some View {
+        MapReader { reader in
+            Map(position: $position) {
+                UserAnnotation()
+                
+                if !drawnPoints.isEmpty {
+                    MapPolygon(coordinates: drawnPoints)
+                        .foregroundStyle(.blue.opacity(0.3))
+                    MapPolygon(coordinates: drawnPoints)
+                        .stroke(.blue, lineWidth: 2)
+                }
+                
+                ForEach(Array(drawnPoints.enumerated()), id: \.offset) { index, point in
+                     Annotation("Point \(index + 1)", coordinate: point) {
+                        Image(systemName: "\(index + 1).circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(.white, .blue)
+                            .shadow(radius: 2)
+                    }
+                }
+            }
+            .onTapGesture { screenPoint in
+                if let location = reader.convert(screenPoint, from: .local) {
+                    drawnPoints.append(location)
+                }
+            }
+            .onReceive(locationManager.$userLocation) { location in
+                if let location, !initialLocationSet {
+                    if log.flightArea == nil {
+                        position = .region(MKCoordinateRegion(
+                            center: location.coordinate,
+                            span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+                        ))
+                        initialLocationSet = true
+                    }
+                }
+            }
+            .onAppear {
+                if let area = log.flightArea, !area.boundary.isEmpty, let region = MKCoordinateRegion(coordinates: area.boundary.map({$0.clLocationCoordinate2D})) {
+                    position = .region(region)
+                }
+            }
+        }
+        .ignoresSafeArea(edges: .bottom)
+    }
+}
+
+
 // MARK: - Flight Area Map View
 struct FlightAreaMapView: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var log: FlightLog
 
     @StateObject private var locationManager = LocationManager()
-    @State private var position: MapCameraPosition = .automatic
     @State private var initialLocationSet = false
     
     @State private var drawnPoints: [CLLocationCoordinate2D] = []
@@ -45,42 +169,30 @@ struct FlightAreaMapView: View {
     var body: some View {
         NavigationStack {
             ZStack(alignment: .bottom) {
-                MapReader { reader in
-                    Map(position: $position) {
-                        UserAnnotation()
-                        
-                        if !drawnPoints.isEmpty {
-                            MapPolygon(coordinates: drawnPoints)
-                                .foregroundStyle(.blue.opacity(0.3))
-                            MapPolygon(coordinates: drawnPoints)
-                                .stroke(.blue, lineWidth: 2)
-                        }
-                        
-                        ForEach(Array(drawnPoints.enumerated()), id: \.offset) { index, point in
-                             Annotation("Point \(index + 1)", coordinate: point) {
-                                Image(systemName: "\(index + 1).circle.fill")
-                                    .font(.title2)
-                                    .foregroundStyle(.white, .blue)
-                                    .shadow(radius: 2)
-                            }
-                        }
-                    }
-                    .onTapGesture { screenPoint in
-                        if let location = reader.convert(screenPoint, from: .local) {
-                            drawnPoints.append(location)
-                        }
-                    }
+                
+                // --- Conditionally choose the correct map view ---
+                if #available(iOS 17.0, *) {
+                    FlightAreaMapViewContent(
+                        log: $log,
+                        locationManager: locationManager,
+                        drawnPoints: $drawnPoints,
+                        initialLocationSet: $initialLocationSet
+                    )
+                } else {
+                    LegacyMapView(drawnPoints: $drawnPoints, userLocation: $locationManager.userLocation)
+                        .ignoresSafeArea(edges: .bottom)
                 }
-                .ignoresSafeArea(edges: .bottom)
 
                 VStack {
-                    HStack {
-                        Spacer()
-                        MapUserLocationButton()
-                        MapPitchToggle()
+                    if #available(iOS 17.0, *) {
+                        HStack {
+                            Spacer()
+                            MapUserLocationButton()
+                            MapPitchToggle()
+                        }
+                        .padding()
+                        .buttonStyle(.borderedProminent)
                     }
-                    .padding()
-                    .buttonStyle(.borderedProminent)
 
                     Spacer()
                     bottomControlsView
@@ -98,17 +210,6 @@ struct FlightAreaMapView: View {
                 }
             }
             .onAppear(perform: onAppear)
-            .onReceive(locationManager.$userLocation) { location in
-                if let location, !initialLocationSet {
-                    if log.flightArea == nil {
-                        position = .region(MKCoordinateRegion(
-                            center: location.coordinate,
-                            span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
-                        ))
-                        initialLocationSet = true
-                    }
-                }
-            }
         }
     }
 
@@ -143,22 +244,15 @@ struct FlightAreaMapView: View {
     }
     
     private func onAppear() {
-        setupFromLog()
+        if let area = log.flightArea {
+            self.drawnPoints = area.boundary.map { $0.clLocationCoordinate2D }
+            self.maxAGLText = String(area.maxAGL)
+        }
+        
         if log.flightArea == nil {
             locationManager.requestLocation()
         } else {
             initialLocationSet = true
-        }
-    }
-    
-    private func setupFromLog() {
-        if let area = log.flightArea {
-            self.drawnPoints = area.boundary.map { $0.clLocationCoordinate2D }
-            self.maxAGLText = String(area.maxAGL)
-            
-            if !drawnPoints.isEmpty, let region = MKCoordinateRegion(coordinates: drawnPoints) {
-                self.position = .region(region)
-            }
         }
     }
     
@@ -269,6 +363,7 @@ struct FlightDetailsSection: View {
     }
 }
 
+// ... (Rest of the file is unchanged)
 /// A reusable form section for adding/editing additional crew members.
 struct AdditionalCrewSection: View {
     @Binding var crew: [LoggedCrewMember]

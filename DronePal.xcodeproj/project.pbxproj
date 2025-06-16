@@ -26,6 +26,7 @@
 		F44898682DF75B43003DBF3C /* ChecklistViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F44898672DF75B43003DBF3C /* ChecklistViews.swift */; };
 		F448986C2DF75B6D003DBF3C /* ScannerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F448986B2DF75B6D003DBF3C /* ScannerViews.swift */; };
 		F448986F2DF75B89003DBF3C /* StatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F448986E2DF75B89003DBF3C /* StatsView.swift */; };
+		F4913D612E00725200B41C3A /* LegacyContentUnavailableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4913D602E00725200B41C3A /* LegacyContentUnavailableView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -49,6 +50,7 @@
 		F44898672DF75B43003DBF3C /* ChecklistViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChecklistViews.swift; sourceTree = "<group>"; };
 		F448986B2DF75B6D003DBF3C /* ScannerViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScannerViews.swift; sourceTree = "<group>"; };
 		F448986E2DF75B89003DBF3C /* StatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsView.swift; sourceTree = "<group>"; };
+		F4913D602E00725200B41C3A /* LegacyContentUnavailableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyContentUnavailableView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -162,6 +164,7 @@
 				F44898542DF75A4F003DBF3C /* Shared */,
 				F44898502DF7592D003DBF3C /* SharedViews.swift */,
 				F44898522DF75943003DBF3C /* ContentView.swift */,
+				F4913D602E00725200B41C3A /* LegacyContentUnavailableView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -321,6 +324,7 @@
 				F448986F2DF75B89003DBF3C /* StatsView.swift in Sources */,
 				F44898682DF75B43003DBF3C /* ChecklistViews.swift in Sources */,
 				F44898412DF75859003DBF3C /* AppLogger.swift in Sources */,
+				F4913D612E00725200B41C3A /* LegacyContentUnavailableView.swift in Sources */,
 				F44898592DF75A7E003DBF3C /* SetupViews.swift in Sources */,
 				F44898432DF7586F003DBF3C /* Data+Extensions.swift in Sources */,
 			);
@@ -469,6 +473,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -482,7 +487,7 @@
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
@@ -505,6 +510,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -518,7 +524,7 @@
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};

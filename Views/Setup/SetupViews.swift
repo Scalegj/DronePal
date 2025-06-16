@@ -181,12 +181,21 @@ private struct SetupStep3_Equipment: View {
             
             Section(header: Text("My Drones")) {
                 if drones.isEmpty {
-                    ContentUnavailableView(
-                        "No Drones Added",
-                        systemImage: "shippingbox.circle",
-                        description: Text("Tap 'Add New Drone' to get started.")
-                    )
-                    .padding(.vertical)
+                    if #available(iOS 17.0, *) {
+                        ContentUnavailableView(
+                            "No Drones Added",
+                            systemImage: "shippingbox.circle",
+                            description: Text("Tap 'Add New Drone' to get started.")
+                        )
+                        .padding(.vertical)
+                    } else {
+                        LegacyContentUnavailableView {
+                            Label("No Drones Added", systemImage: "shippingbox.circle")
+                        } description: {
+                            Text("Tap 'Add New Drone' to get started.")
+                        }
+                        .padding(.vertical)
+                    }
                 } else {
                     ForEach(drones) { drone in
                         VStack(alignment: .leading, spacing: 4) {

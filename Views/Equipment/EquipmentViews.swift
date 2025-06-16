@@ -11,12 +11,20 @@ struct EquipmentListView: View {
                 .padding()
 
             if viewModel.drones.isEmpty {
-                ContentUnavailableView(
-                    "No Equipment",
-                    systemImage: "airplane.circle",
-                    description: Text("Tap the + button to add your first drone.")
-                )
-                .frame(maxHeight: .infinity)
+                if #available(iOS 17.0, *) {
+                    ContentUnavailableView(
+                        "No Equipment",
+                        systemImage: "airplane.circle",
+                        description: Text("Tap the + button to add your first drone.")
+                    )
+                    .frame(maxHeight: .infinity)
+                } else {
+                    LegacyContentUnavailableView {
+                        Label("No Equipment", systemImage: "airplane.circle")
+                    } description: {
+                        Text("Tap the + button to add your first drone.")
+                    }
+                }
             } else {
                 List {
                     ForEach(viewModel.drones) { drone in
