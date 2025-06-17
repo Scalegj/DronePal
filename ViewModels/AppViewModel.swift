@@ -146,8 +146,7 @@ class AppViewModel: ObservableObject {
         Task {
             await self.saveUserSettings()
             for drone in drones {
-                // ** FIX **: Removed `record:` label
-                await cloudKitService.save(drone.ckRecord)
+                await cloudKitService.save(drone)
             }
         }
     }
@@ -194,11 +193,6 @@ class AppViewModel: ObservableObject {
 
     // MARK: - CRUD Operations
     
-    private func save<T: CloudKitSyncable>(_ item: T) async {
-        // ** FIX **: Removed `record:` label
-        await cloudKitService.save(item.ckRecord)
-    }
-
     private func delete<T: CloudKitSyncable>(at offsets: IndexSet, from collection: inout [T]) {
         let itemsToDelete = offsets.map { collection[$0] }
         collection.remove(atOffsets: offsets)
@@ -212,7 +206,7 @@ class AppViewModel: ObservableObject {
         var logToSave = log
         logToSave.crew.removeAll { $0.personName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         updateOrAppend(item: logToSave, to: &flightLogs)
-        Task { await save(logToSave) }
+        Task { await cloudKitService.save(logToSave) }
     }
     
     func moveLogToTrash(at offsets: IndexSet) {
@@ -222,7 +216,7 @@ class AppViewModel: ObservableObject {
                 var logToTrash = flightLogs[logToTrashIndex]
                 logToTrash.trashedDate = Date()
                 flightLogs[logToTrashIndex] = logToTrash
-                Task { await save(logToTrash) }
+                Task { await cloudKitService.save(logToTrash) }
             }
         }
     }
@@ -234,7 +228,7 @@ class AppViewModel: ObservableObject {
                 var logToRestore = flightLogs[logToRestoreIndex]
                 logToRestore.trashedDate = nil
                 flightLogs[logToRestoreIndex] = logToRestore
-                Task { await save(logToRestore) }
+                Task { await cloudKitService.save(logToRestore) }
             }
         }
     }
@@ -248,13 +242,13 @@ class AppViewModel: ObservableObject {
 
     func saveDrone(_ drone: Drone) {
         updateOrAppend(item: drone, to: &drones)
-        Task { await save(drone) }
+        Task { await cloudKitService.save(drone) }
     }
     func deleteDrone(at offsets: IndexSet) { delete(at: offsets, from: &drones) }
     
     func saveChecklist(_ checklist: Checklist) {
         updateOrAppend(item: checklist, to: &checklists)
-        Task { await save(checklist) }
+        Task { await cloudKitService.save(checklist) }
     }
     func deleteChecklist(at offsets: IndexSet) { delete(at: offsets, from: &checklists) }
     
@@ -263,15 +257,14 @@ class AppViewModel: ObservableObject {
             var updatedChecklist = checklist
             updatedChecklist.isFavorite.toggle()
             checklists[index] = updatedChecklist
-            Task { await save(updatedChecklist) }
+            Task { await cloudKitService.save(updatedChecklist) }
         }
     }
     
     func saveUserSettings() async {
         var settingsToSave = self.userSettings
         settingsToSave.recordID = UserSettings.wellKnownRecordID
-        // ** FIX **: Removed `record:` label
-        await cloudKitService.save(settingsToSave.ckRecord)
+        await cloudKitService.save(settingsToSave)
     }
     
     func addCrewRole(name: String) {

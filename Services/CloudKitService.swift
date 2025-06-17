@@ -57,7 +57,7 @@ class CloudKitService {
         }
     }
     
-    // MARK: - Public API (Updated for Custom Zone)
+    // MARK: - Public API
     
     func fetchRecord(withID recordID: CKRecord.ID) async -> CKRecord? {
         do {
@@ -84,23 +84,31 @@ class CloudKitService {
     }
 
     // ** THE FIX IS HERE **
-    // This new function uses the `.ifServerRecordUnchanged` policy (or `.changedKeys` as an alternative),
-    // which handles create-vs-update logic automatically and prevents the "record to insert already exists" error.
-    func save(_ record: CKRecord) async {
+    // This corrected function uses the `.changedKeys` save policy, which is the
+    // modern and correct way to handle creating and updating records without
+    // causing version conflicts or needing to fetch before saving.
+    func save<T: CloudKitSyncable>(_ item: T) async {
+        let recordToSave = item.ckRecord
+        
         do {
-            _ = try await database.modifyRecords(saving: [record], deleting: [])
-            AppLogger.network.info("Successfully saved record via modifyRecords: \(record.recordID.recordName)")
+            // The `savePolicy: .changedKeys` parameter is the key. It tells CloudKit
+            // to intelligently merge our changes. If the record is new, it's created.
+            // If it exists, only the fields we provide are updated, preventing data loss
+            // from other devices and resolving the "record to insert already exists" error.
+            _ = try await database.modifyRecords(saving: [recordToSave], deleting: [], savePolicy: .changedKeys)
+            AppLogger.network.info("Successfully saved record with changedKeys policy: \(recordToSave.recordID.recordName)")
         } catch let error as CKError {
-            // If the save failed because our local version was out of date, we ignore the error
-            // because the server has a newer version anyway, which will be synced down shortly.
+            // With .changedKeys, a .serverRecordChanged error is less likely, but we can still log it.
+            // This error means a conflict occurred that couldn't be automatically merged.
+            // Our app's sync mechanism will eventually receive the server version and update the UI.
             if error.code == .serverRecordChanged {
-                AppLogger.network.info("Save failed because server record was newer. A sync will resolve this.")
+                AppLogger.network.warning("Save failed for \(recordToSave.recordID.recordName) due to a server change. The conflict should be resolved by a down-sync. Error: \(error.localizedDescription)")
             } else {
-                AppLogger.network.error("CloudKit save failed for \(record.recordID.recordName): \(error.localizedDescription)")
+                AppLogger.network.error("CloudKit save failed for \(recordToSave.recordID.recordName): \(error.localizedDescription)")
                 errorPublisher.send(error)
             }
         } catch {
-            AppLogger.network.error("An unexpected error occurred during save for \(record.recordID.recordName): \(error.localizedDescription)")
+            AppLogger.network.error("An unexpected error occurred during save for \(recordToSave.recordID.recordName): \(error.localizedDescription)")
             errorPublisher.send(error)
         }
     }
