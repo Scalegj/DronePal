@@ -61,7 +61,6 @@ struct EquipmentSummaryView: View {
     
     var body: some View {
         HStack(spacing: 16) {
-            // MODIFICATION: Changed parameter name from 'icon' to 'image'
             StatBox(title: "Total Drones", value: "\(viewModel.drones.count)", image: "shippingbox.fill", color: .blue)
             StatBox(title: "Most Flown", value: viewModel.mostFlownDrone()?.model ?? "N/A", image: "star.fill", color: .yellow)
         }
@@ -117,7 +116,8 @@ struct AddEditDroneView: View {
             _drone = State(initialValue: existingDrone)
             isEditing = true
         } else {
-            _drone = State(initialValue: Drone(id: UUID(), company: "", model: "", faaRegistration: "", remoteIdSerial: ""))
+            // When creating a new drone, we start with an empty struct.
+            _drone = State(initialValue: Drone(company: "", model: "", faaRegistration: "", remoteIdSerial: ""))
             isEditing = false
         }
         self.onSave = onSave
@@ -145,7 +145,9 @@ struct AddEditDroneView: View {
                         if let onSave = onSave {
                             onSave(drone)
                         } else {
-                            viewModel.saveDrone(drone: drone)
+                            // ** THE FIX IS HERE **
+                            // The function `saveDrone` no longer has an external parameter name for its first argument.
+                            viewModel.saveDrone(drone)
                         }
                         dismiss()
                     }
