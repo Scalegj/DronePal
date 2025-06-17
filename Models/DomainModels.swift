@@ -1,42 +1,33 @@
 import Foundation
 import CoreBluetooth
 import CoreLocation
+import CloudKit
 
-// MARK: - Custom Codable Coordinate
-// A codable struct to allow storing CLLocationCoordinate2D in UserDefaults
+// MARK: - Protocol for CloudKit Compatibility
+// Defines the common requirements for a model that can be synced with CloudKit.
+protocol CloudKitSyncable: Identifiable where ID == UUID {
+    var recordID: CKRecord.ID? { get set }
+    static var recordType: String { get }
+    init?(from record: CKRecord)
+    var ckRecord: CKRecord { get }
+}
+
+// MARK: - Helper Models (No CloudKit Sync)
+// These models are embedded within other objects. They only need to be Codable.
+
 struct CodableCoordinate: Codable, Hashable {
     var latitude: Double
     var longitude: Double
-
-    // Helper to convert to a CoreLocation coordinate
     var clLocationCoordinate2D: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
     }
 }
 
-struct AppData: Codable {
-    var flightLogs: [FlightLog]
-    var drones: [Drone]
-    var checklists: [Checklist]
-    var userSettings: UserSettings
-    
-    // Provides a clean, empty state for the first app launch
-    static var empty: AppData {
-        AppData(flightLogs: [], drones: [], checklists: [], userSettings: UserSettings())
-    }
-}
-
-// MARK: - Flight Area Model
-// A struct to hold the defined flight area details
 struct FlightArea: Codable, Hashable {
-    var boundary: [CodableCoordinate] // For the drawn polygon
-    var maxAGL: Double // User-defined max altitude in meters
+    var boundary: [CodableCoordinate]
+    var maxAGL: Double
 }
 
-
-// MARK: - Device & Bluetooth Models
-
-/// Represents a discovered Remote ID device, processing and exposing its data for the UI.
 class RemoteIDDevice: ObservableObject, Identifiable {
     let id: UUID
     @Published var name: String
@@ -55,20 +46,15 @@ class RemoteIDDevice: ObservableObject, Identifiable {
     func update(with advertisementData: [String: Any], rssi: NSNumber) {
         self.rssi = rssi
         self.lastUpdated = Date()
-        
         guard let serviceData = advertisementData[CBAdvertisementDataServiceDataKey] as? [CBUUID: Data],
               let remoteIDData = serviceData[CBUUID(string: Constants.remoteIDServiceUUID)] else {
             return
         }
-
         let (newBasicID, newLocation) = ODIDParser.parseMessagePack(data: remoteIDData)
-
         if let newBasicID = newBasicID { self.basicID = newBasicID }
         if let newLocation = newLocation { self.location = newLocation }
     }
 }
-
-// MARK: - Application Data Models
 
 enum PilotType: String, Codable, CaseIterable, Identifiable {
     case part107 = "Part 107"
@@ -76,13 +62,86 @@ enum PilotType: String, Codable, CaseIterable, Identifiable {
     var id: String { self.rawValue }
 }
 
-/// A struct to represent a user-defined crew role.
 struct CrewRole: Identifiable, Codable, Hashable {
     let id: UUID
     var name: String
 }
 
-struct UserSettings: Codable {
+struct FlightSegment: Identifiable, Codable, Hashable {
+    let id: UUID
+    var startTime: Date
+    var endTime: Date?
+    var duration: TimeInterval {
+        endTime?.timeIntervalSince(startTime) ?? Date().timeIntervalSince(startTime)
+    }
+}
+
+struct ClientInfo: Codable, Hashable {
+    var clientName: String = ""
+    var projectID: String = ""
+    var contactInfo: String = ""
+}
+
+struct LoggedCrewMember: Identifiable, Codable, Hashable {
+    let id: UUID
+    var roleName: String
+    var personName: String
+}
+
+struct LoggedRemoteID: Identifiable, Codable, Hashable {
+    let id: UUID
+    var basicID: ODIDBasicID?
+    var telemetry: [TelemetryRecord]
+    var displayName: String { basicID?.uasID ?? "Unknown ID" }
+}
+
+struct TelemetryRecord: Codable, Hashable {
+    let timestamp: Date
+    let location: ODIDLocation
+    let rssi: Int
+}
+
+struct ChecklistItem: Identifiable, Codable, Hashable {
+    let id: UUID
+    var text: String
+}
+
+struct CompletedChecklistItem: Identifiable, Codable, Hashable {
+    let id: UUID
+    var text: String
+    var isChecked: Bool
+    var completionDate: Date?
+}
+
+struct WeatherData: Codable, Hashable {
+    var icao: String = ""
+    var metar: String = "Not available"
+    var decodedMetar: String = "No decoded data."
+}
+
+struct ODIDBasicID: Codable, Hashable {
+    var idType: String
+    var uasID: String
+}
+
+struct ODIDLocation: Codable, Hashable {
+    var status: String
+    var direction: Double
+    var speedHorizontal: Double
+    var speedVertical: Double
+    var latitude: Double
+    var longitude: Double
+    var altitudeGeodetic: Double
+    var height: Double?
+    var heightType: String
+}
+
+// MARK: - CloudKit Syncable Models
+
+struct UserSettings: CloudKitSyncable {
+    var recordID: CKRecord.ID?
+    let id: UUID
+    
     var pilotName: String
     var pilotType: PilotType
     var part107InitialCertificateDate: Date
@@ -90,17 +149,22 @@ struct UserSettings: Codable {
     var recreationalTRUSTDate: Date
     var customCrewRoles: [CrewRole]
 
-    // **FIX START**: Implement custom decoder and encoder for UserSettings
-    
-    enum CodingKeys: String, CodingKey {
-        case pilotName, pilotType, part107InitialCertificateDate, part107LastRecurrencyDate, recreationalTRUSTDate, customCrewRoles
-    }
+    static let recordType = "UserSettings"
+    static let wellKnownRecordID = CKRecord.ID(recordName: "UserSettings-Singleton", zoneID: CloudKitService.customZoneID)
 
-    // Default initializer
-    init(pilotName: String = "", pilotType: PilotType = .part107, part107InitialCertificateDate: Date = Date(), part107LastRecurrencyDate: Date = Date(), recreationalTRUSTDate: Date = Date(), customCrewRoles: [CrewRole] = [
+    init(recordID: CKRecord.ID? = wellKnownRecordID,
+         id: UUID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+         pilotName: String = "",
+         pilotType: PilotType = .part107,
+         part107InitialCertificateDate: Date = Date(),
+         part107LastRecurrencyDate: Date = Date(),
+         recreationalTRUSTDate: Date = Date(),
+         customCrewRoles: [CrewRole] = [
             CrewRole(id: UUID(), name: "Person Manipulating the Controls"),
             CrewRole(id: UUID(), name: "Visual Observer")
-        ]) {
+         ]) {
+        self.recordID = recordID
+        self.id = id
         self.pilotName = pilotName
         self.pilotType = pilotType
         self.part107InitialCertificateDate = part107InitialCertificateDate
@@ -108,62 +172,129 @@ struct UserSettings: Codable {
         self.recreationalTRUSTDate = recreationalTRUSTDate
         self.customCrewRoles = customCrewRoles
     }
-    
-    // Custom Decoder
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        pilotName = try container.decodeIfPresent(String.self, forKey: .pilotName) ?? ""
-        pilotType = try container.decodeIfPresent(PilotType.self, forKey: .pilotType) ?? .part107
-        part107InitialCertificateDate = try container.decodeIfPresent(Date.self, forKey: .part107InitialCertificateDate) ?? Date()
-        part107LastRecurrencyDate = try container.decodeIfPresent(Date.self, forKey: .part107LastRecurrencyDate) ?? Date()
-        recreationalTRUSTDate = try container.decodeIfPresent(Date.self, forKey: .recreationalTRUSTDate) ?? Date()
-        
-        // If 'customCrewRoles' key is missing, provide the default value.
-        customCrewRoles = try container.decodeIfPresent([CrewRole].self, forKey: .customCrewRoles) ?? [
-            CrewRole(id: UUID(), name: "Person Manipulating the Controls"),
-            CrewRole(id: UUID(), name: "Visual Observer")
-        ]
+
+    init?(from record: CKRecord) {
+        guard
+            record.recordID.zoneID == Self.wellKnownRecordID.zoneID,
+            let idString = record["id"] as? String,
+            let id = UUID(uuidString: idString),
+            let pilotName = record["pilotName"] as? String,
+            let pilotTypeRaw = record["pilotType"] as? String,
+            let pilotType = PilotType(rawValue: pilotTypeRaw),
+            let p107InitialDate = record["part107InitialCertificateDate"] as? Date,
+            let p107RecurrencyDate = record["part107LastRecurrencyDate"] as? Date,
+            let trustDate = record["recreationalTRUSTDate"] as? Date,
+            let rolesData = record["customCrewRolesData"] as? Data,
+            let customCrewRoles = try? JSONDecoder().decode([CrewRole].self, from: rolesData)
+        else {
+            return nil
+        }
+        self.init(recordID: record.recordID, id: id, pilotName: pilotName, pilotType: pilotType, part107InitialCertificateDate: p107InitialDate, part107LastRecurrencyDate: p107RecurrencyDate, recreationalTRUSTDate: trustDate, customCrewRoles: customCrewRoles)
     }
-    
-    // Custom Encoder
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(pilotName, forKey: .pilotName)
-        try container.encode(pilotType, forKey: .pilotType)
-        try container.encode(part107InitialCertificateDate, forKey: .part107InitialCertificateDate)
-        try container.encode(part107LastRecurrencyDate, forKey: .part107LastRecurrencyDate)
-        try container.encode(recreationalTRUSTDate, forKey: .recreationalTRUSTDate)
-        try container.encode(customCrewRoles, forKey: .customCrewRoles)
+
+    var ckRecord: CKRecord {
+        let record = CKRecord(recordType: Self.recordType, recordID: self.recordID ?? Self.wellKnownRecordID)
+        record["id"] = id.uuidString
+        record["pilotName"] = pilotName
+        record["pilotType"] = pilotType.rawValue
+        record["part107InitialCertificateDate"] = part107InitialCertificateDate
+        record["part107LastRecurrencyDate"] = part107LastRecurrencyDate
+        record["recreationalTRUSTDate"] = recreationalTRUSTDate
+        if let rolesData = try? JSONEncoder().encode(customCrewRoles) {
+            record["customCrewRolesData"] = rolesData
+        }
+        return record
     }
-    // **FIX END**
 }
 
-
-struct FlightSegment: Identifiable, Codable, Hashable {
+struct Drone: CloudKitSyncable {
+    var recordID: CKRecord.ID?
     let id: UUID
-    var startTime: Date
-    var endTime: Date?
+    var company: String
+    var model: String
+    var faaRegistration: String
+    var remoteIdSerial: String
 
-    var duration: TimeInterval {
-        endTime?.timeIntervalSince(startTime) ?? Date().timeIntervalSince(startTime)
+    var displayName: String { "\(company) \(model)" }
+    static let recordType = "Drone"
+
+    init(id: UUID = UUID(), recordID: CKRecord.ID? = nil, company: String, model: String, faaRegistration: String, remoteIdSerial: String) {
+        self.id = id
+        self.recordID = recordID
+        self.company = company
+        self.model = model
+        self.faaRegistration = faaRegistration
+        self.remoteIdSerial = remoteIdSerial
+    }
+
+    init?(from record: CKRecord) {
+        guard let idString = record["id"] as? String,
+              let id = UUID(uuidString: idString),
+              let company = record["company"] as? String,
+              let model = record["model"] as? String,
+              let faaRegistration = record["faaRegistration"] as? String,
+              let remoteIdSerial = record["remoteIdSerial"] as? String
+        else { return nil }
+        self.init(id: id, recordID: record.recordID, company: company, model: model, faaRegistration: faaRegistration, remoteIdSerial: remoteIdSerial)
+    }
+
+    var ckRecord: CKRecord {
+        let record = recordID != nil ?
+            CKRecord(recordType: Self.recordType, recordID: recordID!) :
+            CKRecord(recordType: Self.recordType, recordID: .init(recordName: id.uuidString, zoneID: CloudKitService.customZoneID))
+        record["id"] = id.uuidString
+        record["company"] = company as CKRecordValue
+        record["model"] = model as CKRecordValue
+        record["faaRegistration"] = faaRegistration as CKRecordValue
+        record["remoteIdSerial"] = remoteIdSerial as CKRecordValue
+        return record
     }
 }
 
-/// A struct to hold client and project information for a flight.
-struct ClientInfo: Codable, Hashable {
-    var clientName: String = ""
-    var projectID: String = ""
-    var contactInfo: String = ""
-}
-
-/// A struct to log a specific crew member for a flight.
-struct LoggedCrewMember: Identifiable, Codable, Hashable {
+struct Checklist: CloudKitSyncable {
+    var recordID: CKRecord.ID?
     let id: UUID
-    var roleName: String
-    var personName: String
+    var name: String
+    var items: [ChecklistItem]
+    var isFavorite: Bool
+
+    static let recordType = "Checklist"
+
+    init(id: UUID = UUID(), recordID: CKRecord.ID? = nil, name: String, items: [ChecklistItem], isFavorite: Bool = false) {
+        self.id = id
+        self.recordID = recordID
+        self.name = name
+        self.items = items
+        self.isFavorite = isFavorite
+    }
+
+    init?(from record: CKRecord) {
+        guard let idString = record["id"] as? String,
+              let id = UUID(uuidString: idString),
+              let name = record["name"] as? String,
+              let isFavorite = record["isFavorite"] as? Bool,
+              let itemsData = record["itemsData"] as? Data,
+              let items = try? JSONDecoder().decode([ChecklistItem].self, from: itemsData)
+        else { return nil }
+        self.init(id: id, recordID: record.recordID, name: name, items: items, isFavorite: isFavorite)
+    }
+
+    var ckRecord: CKRecord {
+        let record = recordID != nil ?
+            CKRecord(recordType: Self.recordType, recordID: recordID!) :
+            CKRecord(recordType: Self.recordType, recordID: .init(recordName: id.uuidString, zoneID: CloudKitService.customZoneID))
+        record["id"] = id.uuidString
+        record["name"] = name
+        record["isFavorite"] = isFavorite
+        if let itemsData = try? JSONEncoder().encode(items) {
+            record["itemsData"] = itemsData
+        }
+        return record
+    }
 }
 
-struct FlightLog: Identifiable, Codable {
+struct FlightLog: CloudKitSyncable {
+    var recordID: CKRecord.ID?
     let id: UUID
     var date: Date
     var aircraftID: UUID?
@@ -182,19 +313,10 @@ struct FlightLog: Identifiable, Codable {
     var flightDuration: TimeInterval {
         segments.reduce(0) { $0 + $1.duration }
     }
-    
-    // Custom Codable implementation for backward compatibility
-    
-    enum CodingKeys: String, CodingKey {
-        case id, date, aircraftID, location, pilotInCommand, missionNotes, weather
-        case crew, clientInfo
-        case loggedRemoteIDs, completedChecklist, segments, flightArea, trashedDate
-        // Old keys for migration
-        case pmtcBy, visualObserver
-    }
+    static let recordType = "FlightLog"
 
-    // Memberwise initializer for creating new logs in code
-    init(id: UUID = UUID(), date: Date = Date(), aircraftID: UUID? = nil, location: String = "", pilotInCommand: String = "", missionNotes: String = "", weather: WeatherData = WeatherData(), crew: [LoggedCrewMember] = [], clientInfo: ClientInfo? = ClientInfo(), loggedRemoteIDs: [LoggedRemoteID] = [], completedChecklist: [CompletedChecklistItem] = [], segments: [FlightSegment] = [], flightArea: FlightArea? = nil, trashedDate: Date? = nil) {
+    init(id: UUID = UUID(), recordID: CKRecord.ID? = nil, date: Date = Date(), aircraftID: UUID? = nil, location: String = "", pilotInCommand: String = "", missionNotes: String = "", weather: WeatherData = WeatherData(), crew: [LoggedCrewMember] = [], clientInfo: ClientInfo? = ClientInfo(), loggedRemoteIDs: [LoggedRemoteID] = [], completedChecklist: [CompletedChecklistItem] = [], segments: [FlightSegment] = [], flightArea: FlightArea? = nil, trashedDate: Date? = nil) {
+        self.recordID = recordID
         self.id = id
         self.date = date
         self.aircraftID = aircraftID
@@ -211,158 +333,72 @@ struct FlightLog: Identifiable, Codable {
         self.trashedDate = trashedDate
     }
 
-    // Custom decoder
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-
-        // Decode all standard properties
-        id = try container.decode(UUID.self, forKey: .id)
-        date = try container.decode(Date.self, forKey: .date)
-        aircraftID = try container.decodeIfPresent(UUID.self, forKey: .aircraftID)
-        location = try container.decode(String.self, forKey: .location)
-        pilotInCommand = try container.decode(String.self, forKey: .pilotInCommand)
-        missionNotes = try container.decode(String.self, forKey: .missionNotes)
-        weather = try container.decode(WeatherData.self, forKey: .weather)
-        loggedRemoteIDs = try container.decode([LoggedRemoteID].self, forKey: .loggedRemoteIDs)
-        completedChecklist = try container.decode([CompletedChecklistItem].self, forKey: .completedChecklist)
-        segments = try container.decode([FlightSegment].self, forKey: .segments)
-        flightArea = try container.decodeIfPresent(FlightArea.self, forKey: .flightArea)
-        trashedDate = try container.decodeIfPresent(Date.self, forKey: .trashedDate)
+    init?(from record: CKRecord) {
+        guard let idString = record["id"] as? String,
+              let id = UUID(uuidString: idString),
+              let date = record["date"] as? Date,
+              let location = record["location"] as? String,
+              let pilotInCommand = record["pilotInCommand"] as? String,
+              let missionNotes = record["missionNotes"] as? String
+        else { return nil }
         
-        // Handle 'clientInfo' (new and optional)
-        clientInfo = try container.decodeIfPresent(ClientInfo.self, forKey: .clientInfo)
+        let weather: WeatherData = (try? record.decode(forKey: "weatherData")) ?? WeatherData()
+        let crew: [LoggedCrewMember] = (try? record.decode(forKey: "crewData")) ?? []
+        let loggedRemoteIDs: [LoggedRemoteID] = (try? record.decode(forKey: "loggedRemoteIDsData")) ?? []
+        let completedChecklist: [CompletedChecklistItem] = (try? record.decode(forKey: "completedChecklistData")) ?? []
+        let segments: [FlightSegment] = (try? record.decode(forKey: "segmentsData")) ?? []
+        
+        let clientInfo: ClientInfo? = try? record.decode(forKey: "clientInfoData")
+        let flightArea: FlightArea? = try? record.decode(forKey: "flightAreaData")
+        
+        let aircraftIDString = record["aircraftID"] as? String
+        let aircraftID = aircraftIDString != nil ? UUID(uuidString: aircraftIDString!) : nil
+        let trashedDate = record["trashedDate"] as? Date
+        
+        self.init(id: id, recordID: record.recordID, date: date, aircraftID: aircraftID, location: location, pilotInCommand: pilotInCommand, missionNotes: missionNotes, weather: weather, crew: crew, clientInfo: clientInfo, loggedRemoteIDs: loggedRemoteIDs, completedChecklist: completedChecklist, segments: segments, flightArea: flightArea, trashedDate: trashedDate)
+    }
 
-        // Handle 'crew' by first checking for the new key, then falling back to migrate old keys
-        if let decodedCrew = try? container.decodeIfPresent([LoggedCrewMember].self, forKey: .crew) {
-            // New format data found, use it directly
-            self.crew = decodedCrew
-        } else {
-            // 'crew' key not found, this is old data. Build the crew list from old properties.
-            var migratedCrew: [LoggedCrewMember] = []
-            if let pmtcName = try container.decodeIfPresent(String.self, forKey: .pmtcBy), !pmtcName.isEmpty {
-                migratedCrew.append(LoggedCrewMember(id: UUID(), roleName: "Person Manipulating the Controls", personName: pmtcName))
-            }
-            if let voName = try container.decodeIfPresent(String.self, forKey: .visualObserver), !voName.isEmpty {
-                migratedCrew.append(LoggedCrewMember(id: UUID(), roleName: "Visual Observer", personName: voName))
-            }
-            self.crew = migratedCrew
+    var ckRecord: CKRecord {
+        let record = recordID != nil ?
+            CKRecord(recordType: Self.recordType, recordID: recordID!) :
+            CKRecord(recordType: Self.recordType, recordID: .init(recordName: id.uuidString, zoneID: CloudKitService.customZoneID))
+        
+        record["id"] = id.uuidString
+        record["date"] = date
+        record["location"] = location
+        record["pilotInCommand"] = pilotInCommand
+        record["missionNotes"] = missionNotes
+        
+        record["aircraftID"] = aircraftID?.uuidString
+        record["trashedDate"] = trashedDate
+        
+        try? record.encode(weather, forKey: "weatherData")
+        try? record.encode(crew, forKey: "crewData")
+        try? record.encode(clientInfo, forKey: "clientInfoData")
+        try? record.encode(loggedRemoteIDs, forKey: "loggedRemoteIDsData")
+        try? record.encode(completedChecklist, forKey: "completedChecklistData")
+        try? record.encode(segments, forKey: "segmentsData")
+        try? record.encode(flightArea, forKey: "flightAreaData")
+        
+        return record
+    }
+}
+
+// MARK: - CKRecord Codable Helpers
+extension CKRecord {
+    func encode<T: Encodable>(_ value: T?, forKey key: String) throws {
+        guard let value = value else {
+            self[key] = nil
+            return
         }
+        let data = try JSONEncoder().encode(value)
+        self[key] = data as CKRecordValue
     }
     
-    // Custom encoder to satisfy the 'Encodable' conformance
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(id, forKey: .id)
-        try container.encode(date, forKey: .date)
-        try container.encodeIfPresent(aircraftID, forKey: .aircraftID)
-        try container.encode(location, forKey: .location)
-        try container.encode(pilotInCommand, forKey: .pilotInCommand)
-        try container.encode(missionNotes, forKey: .missionNotes)
-        try container.encode(weather, forKey: .weather)
-        try container.encode(crew, forKey: .crew)
-        try container.encodeIfPresent(clientInfo, forKey: .clientInfo)
-        try container.encode(loggedRemoteIDs, forKey: .loggedRemoteIDs)
-        try container.encode(completedChecklist, forKey: .completedChecklist)
-        try container.encode(segments, forKey: .segments)
-        try container.encodeIfPresent(flightArea, forKey: .flightArea)
-        try container.encodeIfPresent(trashedDate, forKey: .trashedDate)
+    func decode<T: Decodable>(forKey key: String) throws -> T? {
+        guard let data = self[key] as? Data else {
+            return nil
+        }
+        return try JSONDecoder().decode(T.self, from: data)
     }
-}
-
-struct LoggedRemoteID: Identifiable, Codable, Hashable {
-    let id: UUID
-    var basicID: ODIDBasicID?
-    var telemetry: [TelemetryRecord]
-
-    var displayName: String { basicID?.uasID ?? "Unknown ID" }
-}
-
-struct TelemetryRecord: Codable, Hashable {
-    let timestamp: Date
-    let location: ODIDLocation
-    let rssi: Int
-}
-
-struct Drone: Identifiable, Codable, Hashable {
-    let id: UUID
-    var company: String
-    var model: String
-    var faaRegistration: String
-    var remoteIdSerial: String
-
-    var displayName: String { "\(company) \(model)" }
-}
-
-struct Checklist: Identifiable, Codable, Hashable {
-    let id: UUID
-    var name: String
-    var items: [ChecklistItem]
-    var isFavorite: Bool
-
-    // We need a memberwise initializer because we are creating a custom decoder init
-    init(id: UUID, name: String, items: [ChecklistItem], isFavorite: Bool = false) {
-        self.id = id
-        self.name = name
-        self.items = items
-        self.isFavorite = isFavorite
-    }
-
-    // CodingKeys for all properties
-    enum CodingKeys: String, CodingKey {
-        case id, name, items, isFavorite
-    }
-
-    // Custom decoder initializer to handle missing 'isFavorite' key in old data
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.id = try container.decode(UUID.self, forKey: .id)
-        self.name = try container.decode(String.self, forKey: .name)
-        self.items = try container.decode([ChecklistItem].self, forKey: .items)
-        
-        // This is the fix: try to decode 'isFavorite', but if the key is not found,
-        // default to 'false' instead of throwing an error.
-        self.isFavorite = try container.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
-    }
-}
-
-struct ChecklistItem: Identifiable, Codable, Hashable {
-    let id: UUID
-    var text: String
-}
-
-struct CompletedChecklistItem: Identifiable, Codable, Hashable {
-    let id: UUID
-    var text: String
-    var isChecked: Bool
-    var completionDate: Date?
-}
-
-struct WeatherData: Codable {
-    var icao: String = ""
-    var metar: String = "Not available"
-    var decodedMetar: String = "No decoded data."
-}
-
-// Codable struct for parsing the METAR API response.
-struct MetarReport: Codable {
-    let rawOb: String
-}
-
-// MARK: - ODID Data Structures
-
-struct ODIDBasicID: Codable, Hashable {
-    var idType: String
-    var uasID: String
-}
-
-struct ODIDLocation: Codable, Hashable {
-    var status: String
-    var direction: Double
-    var speedHorizontal: Double
-    var speedVertical: Double
-    var latitude: Double
-    var longitude: Double
-    var altitudeGeodetic: Double
-    var height: Double?
-    var heightType: String
 }

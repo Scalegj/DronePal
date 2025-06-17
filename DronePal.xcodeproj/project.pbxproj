@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		F40AE0C62DF7892600955853 /* PersistenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40AE0C52DF7892600955853 /* PersistenceService.swift */; };
 		F448983F2DF75840003DBF3C /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = F448983E2DF75840003DBF3C /* Constants.swift */; };
 		F44898412DF75859003DBF3C /* AppLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = F44898402DF75859003DBF3C /* AppLogger.swift */; };
 		F44898432DF7586F003DBF3C /* Data+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = F44898422DF7586F003DBF3C /* Data+Extensions.swift */; };
@@ -27,10 +26,10 @@
 		F448986C2DF75B6D003DBF3C /* ScannerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F448986B2DF75B6D003DBF3C /* ScannerViews.swift */; };
 		F448986F2DF75B89003DBF3C /* StatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F448986E2DF75B89003DBF3C /* StatsView.swift */; };
 		F4913D612E00725200B41C3A /* LegacyContentUnavailableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4913D602E00725200B41C3A /* LegacyContentUnavailableView.swift */; };
+		F4B6448B2E01EC2F00DBC826 /* CloudKitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4B6448A2E01EC2F00DBC826 /* CloudKitService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		F40AE0C52DF7892600955853 /* PersistenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistenceService.swift; sourceTree = "<group>"; };
 		F42486872DF5357300DDE273 /* DronePal.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DronePal.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F448983E2DF75840003DBF3C /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
 		F44898402DF75859003DBF3C /* AppLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogger.swift; sourceTree = "<group>"; };
@@ -51,6 +50,7 @@
 		F448986B2DF75B6D003DBF3C /* ScannerViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScannerViews.swift; sourceTree = "<group>"; };
 		F448986E2DF75B89003DBF3C /* StatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsView.swift; sourceTree = "<group>"; };
 		F4913D602E00725200B41C3A /* LegacyContentUnavailableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyContentUnavailableView.swift; sourceTree = "<group>"; };
+		F4B6448A2E01EC2F00DBC826 /* CloudKitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudKitService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -130,7 +130,7 @@
 			children = (
 				F44898462DF7589E003DBF3C /* ODIDParser.swift */,
 				F448984A2DF758C1003DBF3C /* BluetoothScanner.swift */,
-				F40AE0C52DF7892600955853 /* PersistenceService.swift */,
+				F4B6448A2E01EC2F00DBC826 /* CloudKitService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -312,8 +312,8 @@
 				F44898532DF75943003DBF3C /* ContentView.swift in Sources */,
 				F448984B2DF758C1003DBF3C /* BluetoothScanner.swift in Sources */,
 				F448986C2DF75B6D003DBF3C /* ScannerViews.swift in Sources */,
-				F40AE0C62DF7892600955853 /* PersistenceService.swift in Sources */,
 				F44898642DF75B07003DBF3C /* EquipmentViews.swift in Sources */,
+				F4B6448B2E01EC2F00DBC826 /* CloudKitService.swift in Sources */,
 				F448984D2DF758D6003DBF3C /* DomainModels.swift in Sources */,
 				F44898472DF7589E003DBF3C /* ODIDParser.swift in Sources */,
 				F44898512DF7592D003DBF3C /* SharedViews.swift in Sources */,
@@ -479,7 +479,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.Gscale.DronePal;
+				PRODUCT_BUNDLE_IDENTIFIER = com.scalegj.DronePal;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -516,7 +516,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.Gscale.DronePal;
+				PRODUCT_BUNDLE_IDENTIFIER = com.scalegj.DronePal;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;

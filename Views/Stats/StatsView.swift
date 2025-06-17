@@ -73,7 +73,6 @@ struct StatsView: View {
                                 }
                             }
                             
-                            // **FIX**: Styled this button to match the Pre-Flight screen.
                             Button(action: { showAddRoleSheet.toggle() }) {
                                 HStack {
                                     Label("Add New Default Role", systemImage: "plus.circle.fill")
@@ -82,7 +81,7 @@ struct StatsView: View {
                                         .font(.caption.weight(.bold))
                                         .foregroundColor(.secondary.opacity(0.5))
                                 }
-                                .foregroundColor(.accentColor) // Make text and icon blue
+                                .foregroundColor(.accentColor)
                             }
                             .padding(.top, 8)
                         }
@@ -96,8 +95,12 @@ struct StatsView: View {
             .navigationTitle("Stats & Settings")
             .toolbar {
             }
+            // ** THE FIX IS HERE **
+            // The call to an async function must be wrapped in a Task.
             .onDisappear {
-                viewModel.saveUserSettings()
+                Task {
+                    await viewModel.saveUserSettings()
+                }
             }
             .sheet(isPresented: $showAddRoleSheet) {
                 AddNewRoleView()

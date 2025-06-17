@@ -1,87 +1,137 @@
 import Foundation
 import Combine
+import CloudKit
 
-/// The primary ViewModel for the application, responsible for state management and business logic.
-/// This class acts as the "source of truth" for the views, loading from and saving to a single JSON file.
 @MainActor
 class AppViewModel: ObservableObject {
-    // MARK: Published Properties
+    // MARK: - Published Properties
     @Published var bluetoothScanner = BluetoothScanner()
     
-    // These properties represent the entire state of the app's user-created data.
     @Published var flightLogs: [FlightLog] = []
     @Published var drones: [Drone] = []
     @Published var checklists: [Checklist] = []
     @Published var userSettings: UserSettings = UserSettings()
     
-    // Properties managing the live state of the UI and flight logging.
-    @Published var needsSetup: Bool = false
+    @Published var isLoading: Bool = true
+    @Published var needsSetup: Bool = true
     @Published var isLoggingFlight = false
     @Published var activeLog = FlightLog()
     @Published var isSegmentActive = false
 
-    private let persistenceService = PersistenceService()
+    // MARK: - Services and State
+    private let cloudKitService = CloudKitService()
     private var telemetryTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
 
     init() {
-        Task {
-            // 1. Await the setup of the persistence service to connect to iCloud/local storage.
-            await persistenceService.setup()
+        // Subscribe to remote changes from CloudKitService
+        cloudKitService.recordsChangedPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] changedRecords in
+                self?.mergeRemoteChanges(changedRecords)
+            }
+            .store(in: &cancellables)
             
-            // 2. Load data from the determined source.
-            loadData()
+        cloudKitService.deletedRecordIDsPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] deletedIDs in
+                self?.handleRemoteDeletions(deletedIDs)
+            }
+            .store(in: &cancellables)
             
-            // 3. Perform other startup tasks.
-            purgeStaleTrashedLogs()
+        NotificationCenter.default.addObserver(forName: .cloudKitDataChanged, object: nil, queue: .main) { [weak self] _ in
+            AppLogger.general.info("AppViewModel received CloudKit data change notification. Fetching changes.")
+            guard let self = self else { return }
             
-            // 4. **CRITICAL FIX**: Determine if setup is needed based on loaded data.
-            // The source of truth is now the actual user data, not a temporary local flag.
-            if !self.userSettings.pilotName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                // If we successfully loaded a pilot name, it means data exists from a
-                // previous session (on this or another iCloud device).
-                // Therefore, we do NOT need to run the setup flow.
-                self.needsSetup = false
-                
-                // For consistency, we also update the local UserDefaults flag. This ensures
-                // a smooth experience if iCloud is ever offline temporarily on future launches.
-                UserDefaults.standard.set(true, forKey: Constants.UserDefaultsKeys.setupCompleted)
-            } else {
-                // If no pilot name was loaded, the user is either brand new or their
-                // iCloud data is empty. In this case, we must show the setup screen.
-                self.needsSetup = true
+            Task {
+                await self.cloudKitService.fetchDatabaseChanges()
             }
         }
-        
-        // Propagate changes from the scanner to this ViewModel's subscribers.
+
+        // Propagate changes from the bluetooth scanner
         bluetoothScanner.objectWillChange
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
+            
+        // Initial data fetch from CloudKit
+        Task {
+            await cloudKitService.createZoneIfNeeded()
+            await fetchAllData()
+            await subscribeToAllChanges()
+            self.isLoading = false
+        }
     }
     
-    // MARK: - Data Persistence
+    // MARK: - CloudKit Data Operations
     
-    /// Loads the entire application state from the JSON file via the PersistenceService.
-    private func loadData() {
-        let appData = persistenceService.load()
-        self.flightLogs = appData.flightLogs
-        self.drones = appData.drones
-        self.checklists = appData.checklists
-        self.userSettings = appData.userSettings
-    }
-    
-    /// Collects the entire application state and saves it to the JSON file.
-    private func saveData() {
-        let currentData = AppData(
-            flightLogs: self.flightLogs,
-            drones: self.drones,
-            checklists: self.checklists,
-            userSettings: self.userSettings
-        )
-        persistenceService.save(appData: currentData)
-    }
+    private func fetchAllData() async {
+        let fetchedDrones = await cloudKitService.fetchRecords(recordType: Drone.recordType)
+        self.drones = fetchedDrones.compactMap { Drone(from: $0) }
 
+        let fetchedChecklists = await cloudKitService.fetchRecords(recordType: Checklist.recordType)
+        self.checklists = fetchedChecklists.compactMap { Checklist(from: $0) }
+        
+        let fetchedLogs = await cloudKitService.fetchRecords(recordType: FlightLog.recordType)
+        self.flightLogs = fetchedLogs.compactMap { FlightLog(from: $0) }.sorted { $0.date > $1.date }
+
+        if let settingsRecord = await cloudKitService.fetchRecord(withID: UserSettings.wellKnownRecordID) {
+            if let settings = UserSettings(from: settingsRecord) {
+                self.userSettings = settings
+                self.needsSetup = settings.pilotName.trimmingCharacters(in: .whitespaces).isEmpty
+            }
+        } else {
+            self.needsSetup = true
+        }
+
+        AppLogger.general.info("Initial fetch completed. Drones: \(self.drones.count), Logs: \(self.flightLogs.count)")
+    }
+    
+    private func subscribeToAllChanges() async {
+        await cloudKitService.subscribeToChanges(for: Drone.recordType)
+        await cloudKitService.subscribeToChanges(for: Checklist.recordType)
+        await cloudKitService.subscribeToChanges(for: FlightLog.recordType)
+        await cloudKitService.subscribeToChanges(for: UserSettings.recordType)
+    }
+    
+    private func mergeRemoteChanges(_ records: [CKRecord]) {
+        for record in records {
+            switch record.recordType {
+            case Drone.recordType:
+                if let updatedItem = Drone(from: record) { updateOrAppend(item: updatedItem, to: &drones) }
+            case Checklist.recordType:
+                 if let updatedItem = Checklist(from: record) { updateOrAppend(item: updatedItem, to: &checklists) }
+            case FlightLog.recordType:
+                 if let updatedItem = FlightLog(from: record) { updateOrAppend(item: updatedItem, to: &flightLogs) }
+            case UserSettings.recordType:
+                if record.recordID == UserSettings.wellKnownRecordID, let updatedSettings = UserSettings(from: record) {
+                    self.userSettings = updatedSettings
+                    self.needsSetup = updatedSettings.pilotName.trimmingCharacters(in: .whitespaces).isEmpty
+                }
+            default: break
+            }
+        }
+    }
+    
+    private func handleRemoteDeletions(_ recordIDs: [CKRecord.ID]) {
+        for recordID in recordIDs {
+            drones.removeAll { $0.recordID == recordID }
+            checklists.removeAll { $0.recordID == recordID }
+            flightLogs.removeAll { $0.recordID == recordID }
+        }
+    }
+    
+    private func updateOrAppend<T: CloudKitSyncable>(item: T, to collection: inout [T]) {
+        if let index = collection.firstIndex(where: { $0.id == item.id }) {
+            collection[index] = item
+        } else {
+            collection.append(item)
+        }
+        if T.self == FlightLog.self {
+            self.flightLogs.sort { $0.date > $1.date }
+        }
+    }
+    
     // MARK: - Setup Flow
     func finalizeSetup(settings: UserSettings, drones: [Drone], hasDoneRecurrent: Bool) {
         var finalSettings = settings
@@ -91,11 +141,15 @@ class AppViewModel: ObservableObject {
         
         self.userSettings = finalSettings
         self.drones = drones
+        self.needsSetup = false
         
-        UserDefaults.standard.set(true, forKey: Constants.UserDefaultsKeys.setupCompleted)
-        needsSetup = false
-        
-        saveData()
+        Task {
+            await self.saveUserSettings()
+            for drone in drones {
+                // ** FIX **: Removed `record:` label
+                await cloudKitService.save(drone.ckRecord)
+            }
+        }
     }
 
     // MARK: - Flight Logging
@@ -103,17 +157,12 @@ class AppViewModel: ObservableObject {
         activeLog = FlightLog()
         activeLog.pilotInCommand = userSettings.pilotName
         activeLog.aircraftID = drones.first?.id
-        activeLog.clientInfo = ClientInfo()
-        activeLog.crew = []
-        
-        if let firstChecklist = checklists.first {
-            activeLog.completedChecklist = firstChecklist.items.map {
-                CompletedChecklistItem(id: $0.id, text: $0.text, isChecked: false)
-            }
-        }
-        
-        bluetoothScanner.startScanning()
+        activeLog.crew = userSettings.customCrewRoles
+            .filter { $0.name == "Person Manipulating the Controls" || $0.name == "Visual Observer" }
+            .map { LoggedCrewMember(id: UUID(), roleName: $0.name, personName: "") }
+
         isLoggingFlight = true
+        bluetoothScanner.startScanning()
         startTelemetryTimer()
     }
     
@@ -143,98 +192,97 @@ class AppViewModel: ObservableObject {
         isSegmentActive = false
     }
 
-    // MARK: - Data Persistence (CRUD Operations)
+    // MARK: - CRUD Operations
     
-    private func saveLog(_ log: FlightLog) {
+    private func save<T: CloudKitSyncable>(_ item: T) async {
+        // ** FIX **: Removed `record:` label
+        await cloudKitService.save(item.ckRecord)
+    }
+
+    private func delete<T: CloudKitSyncable>(at offsets: IndexSet, from collection: inout [T]) {
+        let itemsToDelete = offsets.map { collection[$0] }
+        collection.remove(atOffsets: offsets)
+        for item in itemsToDelete {
+            guard let recordID = item.recordID else { continue }
+            Task { await cloudKitService.delete(recordID: recordID) }
+        }
+    }
+
+    func saveLog(_ log: FlightLog) {
         var logToSave = log
         logToSave.crew.removeAll { $0.personName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-
-        if let index = self.flightLogs.firstIndex(where: { $0.id == logToSave.id }) {
-            self.flightLogs[index] = logToSave
-        } else {
-            self.flightLogs.append(logToSave)
-            self.flightLogs.sort { $0.date > $1.date }
-        }
-        saveData()
+        updateOrAppend(item: logToSave, to: &flightLogs)
+        Task { await save(logToSave) }
     }
     
     func moveLogToTrash(at offsets: IndexSet) {
-        let activeLogs = self.activeFlightLogs
-        let logsToMove = offsets.map { activeLogs[$0] }
-        
-        for log in logsToMove {
-            if let index = self.flightLogs.firstIndex(where: { $0.id == log.id }) {
-                self.flightLogs[index].trashedDate = Date()
+        let active = self.activeFlightLogs
+        offsets.forEach { index in
+            if let logToTrashIndex = flightLogs.firstIndex(where: { $0.id == active[index].id }) {
+                var logToTrash = flightLogs[logToTrashIndex]
+                logToTrash.trashedDate = Date()
+                flightLogs[logToTrashIndex] = logToTrash
+                Task { await save(logToTrash) }
             }
         }
-        saveData()
     }
     
     func restoreLogFromTrash(at offsets: IndexSet) {
         let trashed = self.trashedFlightLogs
-        let logsToRestore = offsets.map { trashed[$0] }
-        
-        for log in logsToRestore {
-            if let index = self.flightLogs.firstIndex(where: { $0.id == log.id }) {
-                self.flightLogs[index].trashedDate = nil
+        offsets.forEach { index in
+            if let logToRestoreIndex = flightLogs.firstIndex(where: { $0.id == trashed[index].id }) {
+                var logToRestore = flightLogs[logToRestoreIndex]
+                logToRestore.trashedDate = nil
+                flightLogs[logToRestoreIndex] = logToRestore
+                Task { await save(logToRestore) }
             }
         }
-        saveData()
     }
     
     func deleteLogPermanently(at offsets: IndexSet) {
         let trashed = self.trashedFlightLogs
         let idsToDelete = offsets.map { trashed[$0].id }
-        self.flightLogs.removeAll { idsToDelete.contains($0.id) }
-        saveData()
+        let logOffsetsToDelete = IndexSet(flightLogs.indices.filter { idsToDelete.contains(flightLogs[$0].id) })
+        delete(at: logOffsetsToDelete, from: &flightLogs)
     }
 
-    func saveDrone(drone: Drone) {
-        if let index = drones.firstIndex(where: { $0.id == drone.id }) {
-            drones[index] = drone
-        } else {
-            drones.append(drone)
-        }
-        saveData()
+    func saveDrone(_ drone: Drone) {
+        updateOrAppend(item: drone, to: &drones)
+        Task { await save(drone) }
     }
+    func deleteDrone(at offsets: IndexSet) { delete(at: offsets, from: &drones) }
     
     func saveChecklist(_ checklist: Checklist) {
-        if let index = checklists.firstIndex(where: { $0.id == checklist.id }) {
-            checklists[index] = checklist
-        } else {
-            checklists.append(checklist)
-        }
-        saveData()
+        updateOrAppend(item: checklist, to: &checklists)
+        Task { await save(checklist) }
     }
+    func deleteChecklist(at offsets: IndexSet) { delete(at: offsets, from: &checklists) }
     
     func toggleFavorite(for checklist: Checklist) {
         if let index = checklists.firstIndex(where: { $0.id == checklist.id }) {
-            checklists[index].isFavorite.toggle()
-            saveData()
+            var updatedChecklist = checklist
+            updatedChecklist.isFavorite.toggle()
+            checklists[index] = updatedChecklist
+            Task { await save(updatedChecklist) }
         }
     }
     
-    func saveUserSettings() {
-        saveData()
+    func saveUserSettings() async {
+        var settingsToSave = self.userSettings
+        settingsToSave.recordID = UserSettings.wellKnownRecordID
+        // ** FIX **: Removed `record:` label
+        await cloudKitService.save(settingsToSave.ckRecord)
     }
     
     func addCrewRole(name: String) {
         let newRole = CrewRole(id: UUID(), name: name)
         userSettings.customCrewRoles.append(newRole)
+        Task { await saveUserSettings() }
     }
     
     func deleteCrewRole(roleToDelete: CrewRole) {
         userSettings.customCrewRoles.removeAll { $0.id == roleToDelete.id }
-    }
-
-    func deleteDrone(at offsets: IndexSet) {
-        drones.remove(atOffsets: offsets)
-        saveData()
-    }
-    
-    func deleteChecklist(at offsets: IndexSet) {
-        checklists.remove(atOffsets: offsets)
-        saveData()
+        Task { await saveUserSettings() }
     }
     
     // MARK: - Weather Service
@@ -242,114 +290,58 @@ class AppViewModel: ObservableObject {
         guard !activeLog.weather.icao.isEmpty else { return }
         let icao = activeLog.weather.icao.uppercased()
         guard let url = URL(string: "https://aviationweather.gov/api/data/metar?ids=\(icao)&format=json") else { return }
-
         var request = URLRequest(url: url)
         request.setValue("Part 107 Logbook App (Production)", forHTTPHeaderField: "User-Agent")
-
         do {
             let (data, _) = try await URLSession.shared.data(for: request)
+            struct MetarReport: Codable { let rawOb: String }
             let metarReports = try JSONDecoder().decode([MetarReport].self, from: data)
-            
             if let report = metarReports.first {
                 self.activeLog.weather.metar = report.rawOb
-                self.activeLog.weather.decodedMetar = self.decodeMetar(raw: report.rawOb)
             } else {
                 self.activeLog.weather.metar = "METAR not found for \(icao)"
-                self.activeLog.weather.decodedMetar = "No data available."
             }
         } catch {
             AppLogger.network.error("Error fetching or parsing METAR for \(icao): \(error.localizedDescription)")
             self.activeLog.weather.metar = "Error fetching METAR."
-            self.activeLog.weather.decodedMetar = "Could not parse response."
         }
     }
     
     // MARK: - Computed Properties & Helpers
-    
-    var activeFlightLogs: [FlightLog] {
-        flightLogs.filter { $0.trashedDate == nil }
-    }
-    
-    var trashedFlightLogs: [FlightLog] {
-        flightLogs.filter { $0.trashedDate != nil }.sorted { $0.trashedDate! > $1.trashedDate! }
-    }
-    
-    var favoriteChecklistCount: Int {
-        checklists.filter { $0.isFavorite }.count
-    }
-    
-    var totalFlightTime: TimeInterval {
-        activeFlightLogs.reduce(0) { $0 + $1.flightDuration }
-    }
-    
+    var activeFlightLogs: [FlightLog] { flightLogs.filter { $0.trashedDate == nil } }
+    var trashedFlightLogs: [FlightLog] { flightLogs.filter { $0.trashedDate != nil }.sorted { $0.trashedDate! > $1.trashedDate! } }
+    var totalFlightTime: TimeInterval { activeFlightLogs.reduce(0) { $0 + $1.flightDuration } }
     var recurrencyExpirationDate: Date? {
         guard userSettings.pilotType == .part107 else { return nil }
         return Calendar.current.date(byAdding: .month, value: 24, to: userSettings.part107LastRecurrencyDate)
     }
-
     var daysUntilRecurrencyExpires: Int? {
         guard let expirationDate = recurrencyExpirationDate else { return nil }
         return Calendar.current.dateComponents([.day], from: Date(), to: expirationDate).day
     }
-    
-    func droneForID(_ id: UUID?) -> Drone? {
-        guard let id = id else { return nil }
-        return drones.first { $0.id == id }
-    }
-    
+    func droneForID(_ id: UUID?) -> Drone? { drones.first { $0.id == id } }
     func mostFlownDrone() -> Drone? {
         let flightCounts = activeFlightLogs.reduce(into: [UUID: Int]()) { counts, log in
-            guard let id = log.aircraftID else { return }
-            counts[id, default: 0] += 1
+            guard let id = log.aircraftID else { return }; counts[id, default: 0] += 1
         }
-        
-        guard let topDroneID = flightCounts.max(by: { $0.value < $1.value })?.key else {
-            return drones.first
-        }
-        
+        guard let topDroneID = flightCounts.max(by: { $0.value < $1.value })?.key else { return drones.first }
         return droneForID(topDroneID)
     }
     
     // MARK: - Private Methods
-    
-    private func purgeStaleTrashedLogs() {
-        let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: Date())!
-        let originalCount = self.flightLogs.count
-        
-        self.flightLogs.removeAll { log in
-            guard let trashedDate = log.trashedDate else { return false }
-            return trashedDate < thirtyDaysAgo
-        }
-        
-        if self.flightLogs.count != originalCount {
-            AppLogger.persistence.info("Purged \(originalCount - self.flightLogs.count) stale log(s) from trash.")
-            saveData()
-        }
-    }
-
     private func startTelemetryTimer() {
         telemetryTimer?.invalidate()
         telemetryTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.recordTelemetrySnapshot()
-            }
+            Task { @MainActor [weak self] in self?.recordTelemetrySnapshot() }
         }
     }
-    
-    private func stopTelemetryTimer() {
-        telemetryTimer?.invalidate()
-        telemetryTimer = nil
-    }
-
+    private func stopTelemetryTimer() { telemetryTimer?.invalidate(); telemetryTimer = nil }
     private func recordTelemetrySnapshot() {
         let timestamp = Date()
         var updatedLoggedIDs = activeLog.loggedRemoteIDs
-
         for device in bluetoothScanner.discoveredDevices.values {
             guard let location = device.location else { continue }
-            
             let newRecord = TelemetryRecord(timestamp: timestamp, location: location, rssi: device.rssi.intValue)
-            
             if let index = updatedLoggedIDs.firstIndex(where: { $0.id == device.id }) {
                 updatedLoggedIDs[index].basicID = device.basicID
                 updatedLoggedIDs[index].telemetry.append(newRecord)
@@ -358,16 +350,5 @@ class AppViewModel: ObservableObject {
             }
         }
         self.activeLog.loggedRemoteIDs = updatedLoggedIDs
-    }
-    
-    private func decodeMetar(raw: String) -> String {
-        // This is a simplistic parser.
-        var decodedParts: [String] = []
-        let components = raw.split(separator: " ").map { String($0) }
-        
-        if !components.isEmpty {
-            decodedParts.append("Station: \(components.first ?? "N/A")")
-        }
-        return decodedParts.joined(separator: "\n")
     }
 }
