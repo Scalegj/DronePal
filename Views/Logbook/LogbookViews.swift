@@ -9,7 +9,100 @@ struct FlightLogListView: View {
     @Environment(\.appNavigationStyle) private var navigationStyle
     
     @State private var showTrashSheet = false
+    @State private var searchQuery = ""
 
+    /// Performs a refined, two-stage search. It first attempts to match the query against specific date formats.
+    /// If no specific date is found, it performs a broad, token-based search across all log content.
+    private var searchResults: [LogbookSection] {
+        if searchQuery.isEmpty {
+            return viewModel.groupedFlightLogs
+        }
+
+        let lowercasedQuery = searchQuery.lowercased()
+        let queryTokens = lowercasedQuery.split(separator: " ").map(String.init)
+        
+        let filteredLogs = viewModel.activeFlightLogs.filter { log in
+            // --- Stage 1: Precise Date Search ---
+            // Generate a list of specific, complete date strings for the log.
+            let dateFormats = [
+                "MMMM d",       // June 20
+                "MMM d",        // Jun 20
+                "M/d",          // 6/20
+                "MM/dd",        // 06/20
+                "M/d/yy",       // 6/20/25
+                "M/d/yyyy",     // 6/20/2025
+                "MM/dd/yy",     // 06/20/25
+                "MM/dd/yyyy",   // 06/20/2025
+                "yyyy-MM-dd"    // 2025-06-20
+            ]
+            
+            let dateFormatter = DateFormatter()
+            for format in dateFormats {
+                dateFormatter.dateFormat = format
+                // If the user's query exactly matches a formatted date, we have a precise match.
+                if dateFormatter.string(from: log.date).lowercased() == lowercasedQuery {
+                    return true
+                }
+            }
+
+            // --- Stage 2: Broad Content Search ---
+            // If it's not a specific date query, fall back to searching all content.
+            let droneName = viewModel.droneForID(log.aircraftID)?.displayName ?? ""
+            let crewContent = log.crew.map { "\($0.personName) \($0.roleName)" }.joined(separator: " ")
+            
+            // Generate broader date content for keyword matching (e.g., "June", "20", "2025")
+            let broadDateContent = """
+            \(log.date.formatted(.dateTime.month(.wide).year().day(.defaultDigits)))
+            \(log.date.formatted(.dateTime.weekday(.wide)))
+            """
+
+            let logContent = """
+            \(log.location)
+            \(log.pilotInCommand)
+            \(log.missionNotes)
+            \(log.weather.icao)
+            \(log.weather.metar)
+            \(log.weather.decodedMetar)
+            \(log.clientInfo?.clientName ?? "")
+            \(log.clientInfo?.projectID ?? "")
+            \(log.clientInfo?.contactInfo ?? "")
+            \(crewContent)
+            \(droneName)
+            \(broadDateContent)
+            """.lowercased()
+
+            // Check if ALL search tokens are present in the combined content.
+            return queryTokens.allSatisfy { token in
+                logContent.contains(token)
+            }
+        }
+        
+        // Group the final filtered results back into sections.
+        return groupLogsByMonth(filteredLogs)
+    }
+    
+    /// A helper function to group a list of logs into sections by month and year.
+    private func groupLogsByMonth(_ logs: [FlightLog]) -> [LogbookSection] {
+        let monthFormatter: DateFormatter = {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "MMMM yyyy"
+            return formatter
+        }()
+        
+        let groupedByMonth = Dictionary(grouping: logs) { log -> Date in
+            let components = Calendar.current.dateComponents([.year, .month], from: log.date)
+            return Calendar.current.date(from: components)!
+        }
+        
+        return groupedByMonth.keys.sorted(by: >).map { monthDate in
+            LogbookSection(
+                id: monthDate,
+                title: monthFormatter.string(from: monthDate),
+                logs: groupedByMonth[monthDate]!
+            )
+        }
+    }
+    
     var body: some View {
         Group {
             if viewModel.groupedFlightLogs.isEmpty {
@@ -24,16 +117,15 @@ struct FlightLogListView: View {
                 }
             } else {
                 List {
-                    ForEach(viewModel.groupedFlightLogs) { section in
+                    ForEach(searchResults) { section in
                         Section(header: Text(section.title).font(.headline)) {
                             ForEach(section.logs) { log in
-                                // FIX: Removed the .listRowInsets modifier to allow the row to fill the available width.
                                 NavigationLink(value: log) {
                                    FlightLogRowView(log: log)
                                 }
                                 .listRowSeparator(.hidden)
                                 .listRowBackground(Color.clear)
-                                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0)) // Adjust vertical padding if needed, but keep horizontal at 0.
+                                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                             }
                             .onDelete { indexSet in
                                 let logsToDelete = indexSet.map { section.logs[$0] }
@@ -48,6 +140,7 @@ struct FlightLogListView: View {
             }
         }
         .navigationTitle("Flight Logbook")
+        .searchable(text: $searchQuery, prompt: "Search Logs")
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
                 if currentDeviceType == .iPad {
@@ -254,7 +347,7 @@ struct FlightDetailView: View {
                                 .allowsHitTesting(false)
                             }
                         } else {
-                            var points = flightArea.boundary.map { $0.clLocationCoordinate2D }
+                            let points = flightArea.boundary.map { $0.clLocationCoordinate2D }
                             LegacyMapView(drawnPoints: .constant(points), userLocation: .constant(nil), isInteractive: false)
                                 .frame(height: 250)
                                 .clipShape(RoundedRectangle(cornerRadius: 10))

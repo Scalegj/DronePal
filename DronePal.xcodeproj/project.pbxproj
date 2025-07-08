@@ -26,6 +26,7 @@
 		F44898682DF75B43003DBF3C /* ChecklistViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F44898672DF75B43003DBF3C /* ChecklistViews.swift */; };
 		F448986C2DF75B6D003DBF3C /* ScannerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F448986B2DF75B6D003DBF3C /* ScannerViews.swift */; };
 		F448986F2DF75B89003DBF3C /* StatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F448986E2DF75B89003DBF3C /* StatsView.swift */; };
+		F47489632E1DBB7A00720F45 /* SearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F47489622E1DBB7A00720F45 /* SearchService.swift */; };
 		F4913D612E00725200B41C3A /* LegacyContentUnavailableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4913D602E00725200B41C3A /* LegacyContentUnavailableView.swift */; };
 		F4B6448B2E01EC2F00DBC826 /* CloudKitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4B6448A2E01EC2F00DBC826 /* CloudKitService.swift */; };
 		F4B644A52E02231800DBC826 /* iPadMainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4B644A42E02231800DBC826 /* iPadMainView.swift */; };
@@ -52,6 +53,7 @@
 		F44898672DF75B43003DBF3C /* ChecklistViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChecklistViews.swift; sourceTree = "<group>"; };
 		F448986B2DF75B6D003DBF3C /* ScannerViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScannerViews.swift; sourceTree = "<group>"; };
 		F448986E2DF75B89003DBF3C /* StatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsView.swift; sourceTree = "<group>"; };
+		F47489622E1DBB7A00720F45 /* SearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchService.swift; sourceTree = "<group>"; };
 		F4913D602E00725200B41C3A /* LegacyContentUnavailableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyContentUnavailableView.swift; sourceTree = "<group>"; };
 		F4B6448A2E01EC2F00DBC826 /* CloudKitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudKitService.swift; sourceTree = "<group>"; };
 		F4B644A42E02231800DBC826 /* iPadMainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iPadMainView.swift; sourceTree = "<group>"; };
@@ -136,6 +138,7 @@
 				F44898462DF7589E003DBF3C /* ODIDParser.swift */,
 				F448984A2DF758C1003DBF3C /* BluetoothScanner.swift */,
 				F4B6448A2E01EC2F00DBC826 /* CloudKitService.swift */,
+				F47489622E1DBB7A00720F45 /* SearchService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -333,6 +336,7 @@
 				F44898412DF75859003DBF3C /* AppLogger.swift in Sources */,
 				F4913D612E00725200B41C3A /* LegacyContentUnavailableView.swift in Sources */,
 				F44898592DF75A7E003DBF3C /* SetupViews.swift in Sources */,
+				F47489632E1DBB7A00720F45 /* SearchService.swift in Sources */,
 				F40D23F32E0253A300544178 /* View+Extensions.swift in Sources */,
 				F44898432DF7586F003DBF3C /* Data+Extensions.swift in Sources */,
 			);

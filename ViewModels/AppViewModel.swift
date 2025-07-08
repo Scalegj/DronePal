@@ -27,6 +27,7 @@ class AppViewModel: ObservableObject {
 
     // MARK: - Services and State
     private let cloudKitService = CloudKitService()
+    private let searchService = SearchService()
     private var telemetryTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
 
@@ -134,6 +135,9 @@ class AppViewModel: ObservableObject {
         } else {
             collection.append(item)
         }
+        if let log = item as? FlightLog {
+            searchService.index(log: log)
+        }
         if T.self == FlightLog.self {
             self.flightLogs.sort { $0.date > $1.date }
         }
@@ -204,6 +208,9 @@ class AppViewModel: ObservableObject {
         let itemsToDelete = offsets.map { collection[$0] }
         collection.remove(atOffsets: offsets)
         for item in itemsToDelete {
+            if let log = item as? FlightLog {
+                searchService.deindex(log: log)
+            }
             guard let recordID = item.recordID else { continue }
             Task { await cloudKitService.delete(recordID: recordID) }
         }
@@ -219,8 +226,11 @@ class AppViewModel: ObservableObject {
     // FIX: A new method to move a specific log to trash, used by the grouped list view.
     func moveLogToTrash(log: FlightLog) {
         if let index = flightLogs.firstIndex(where: { $0.id == log.id }) {
-            flightLogs[index].trashedDate = Date()
-            Task { await cloudKitService.save(flightLogs[index]) }
+            var logToTrash = flightLogs[index]
+            logToTrash.trashedDate = Date()
+            flightLogs[index] = logToTrash
+            searchService.deindex(log: logToTrash)
+            Task { await cloudKitService.save(logToTrash) }
         }
     }
     
@@ -231,6 +241,7 @@ class AppViewModel: ObservableObject {
                 var logToRestore = flightLogs[logToRestoreIndex]
                 logToRestore.trashedDate = nil
                 flightLogs[logToRestoreIndex] = logToRestore
+                searchService.index(log: logToRestore)
                 Task { await cloudKitService.save(logToRestore) }
             }
         }
