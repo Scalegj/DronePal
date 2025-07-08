@@ -2,6 +2,13 @@ import Foundation
 import Combine
 import CloudKit
 
+// NEW: A helper struct to create identifiable sections for the logbook list.
+struct LogbookSection: Identifiable {
+    let id: Date
+    let title: String
+    let logs: [FlightLog]
+}
+
 @MainActor
 class AppViewModel: ObservableObject {
     // MARK: - Published Properties
@@ -209,15 +216,11 @@ class AppViewModel: ObservableObject {
         Task { await cloudKitService.save(logToSave) }
     }
     
-    func moveLogToTrash(at offsets: IndexSet) {
-        let active = self.activeFlightLogs
-        offsets.forEach { index in
-            if let logToTrashIndex = flightLogs.firstIndex(where: { $0.id == active[index].id }) {
-                var logToTrash = flightLogs[logToTrashIndex]
-                logToTrash.trashedDate = Date()
-                flightLogs[logToTrashIndex] = logToTrash
-                Task { await cloudKitService.save(logToTrash) }
-            }
+    // FIX: A new method to move a specific log to trash, used by the grouped list view.
+    func moveLogToTrash(log: FlightLog) {
+        if let index = flightLogs.firstIndex(where: { $0.id == log.id }) {
+            flightLogs[index].trashedDate = Date()
+            Task { await cloudKitService.save(flightLogs[index]) }
         }
     }
     
@@ -302,8 +305,45 @@ class AppViewModel: ObservableObject {
     
     // MARK: - Computed Properties & Helpers
     var activeFlightLogs: [FlightLog] { flightLogs.filter { $0.trashedDate == nil } }
+    
+    // NEW: A computed property to group flight logs by month for the list view.
+    var groupedFlightLogs: [LogbookSection] {
+        let sortedLogs = activeFlightLogs.sorted { $0.date > $1.date }
+        
+        let groupedByMonth = Dictionary(grouping: sortedLogs) { log -> Date in
+            let components = Calendar.current.dateComponents([.year, .month], from: log.date)
+            return Calendar.current.date(from: components)!
+        }
+        
+        let monthFormatter: DateFormatter = {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "MMMM yyyy"
+            return formatter
+        }()
+        
+        return groupedByMonth.keys.sorted(by: >).map { monthDate in
+            LogbookSection(
+                id: monthDate,
+                title: monthFormatter.string(from: monthDate),
+                logs: groupedByMonth[monthDate]!
+            )
+        }
+    }
+
     var trashedFlightLogs: [FlightLog] { flightLogs.filter { $0.trashedDate != nil }.sorted { $0.trashedDate! > $1.trashedDate! } }
     var totalFlightTime: TimeInterval { activeFlightLogs.reduce(0) { $0 + $1.flightDuration } }
+    
+    var flightTimeByDrone: [UUID: TimeInterval] {
+        activeFlightLogs.reduce(into: [UUID: TimeInterval]()) { result, log in
+            guard let droneID = log.aircraftID else { return }
+            result[droneID, default: 0] += log.flightDuration
+        }
+    }
+    
+    var totalChecklistItems: Int {
+        checklists.reduce(0) { $0 + $1.items.count }
+    }
+    
     var recurrencyExpirationDate: Date? {
         guard userSettings.pilotType == .part107 else { return nil }
         return Calendar.current.date(byAdding: .month, value: 24, to: userSettings.part107LastRecurrencyDate)
@@ -313,11 +353,9 @@ class AppViewModel: ObservableObject {
         return Calendar.current.dateComponents([.day], from: Date(), to: expirationDate).day
     }
     func droneForID(_ id: UUID?) -> Drone? { drones.first { $0.id == id } }
+    
     func mostFlownDrone() -> Drone? {
-        let flightCounts = activeFlightLogs.reduce(into: [UUID: Int]()) { counts, log in
-            guard let id = log.aircraftID else { return }; counts[id, default: 0] += 1
-        }
-        guard let topDroneID = flightCounts.max(by: { $0.value < $1.value })?.key else { return drones.first }
+        guard let topDroneID = flightTimeByDrone.max(by: { $0.value < $1.value })?.key else { return drones.first }
         return droneForID(topDroneID)
     }
     

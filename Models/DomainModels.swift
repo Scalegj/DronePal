@@ -207,7 +207,8 @@ struct UserSettings: CloudKitSyncable {
     }
 }
 
-struct Drone: CloudKitSyncable {
+// FIX: Added Hashable conformance
+struct Drone: CloudKitSyncable, Hashable {
     var recordID: CKRecord.ID?
     let id: UUID
     var company: String
@@ -251,7 +252,8 @@ struct Drone: CloudKitSyncable {
     }
 }
 
-struct Checklist: CloudKitSyncable {
+// FIX: Added Hashable conformance
+struct Checklist: CloudKitSyncable, Hashable {
     var recordID: CKRecord.ID?
     let id: UUID
     var name: String
@@ -293,7 +295,8 @@ struct Checklist: CloudKitSyncable {
     }
 }
 
-struct FlightLog: CloudKitSyncable {
+// FIX: Added Hashable conformance
+struct FlightLog: CloudKitSyncable, Hashable {
     var recordID: CKRecord.ID?
     let id: UUID
     var date: Date

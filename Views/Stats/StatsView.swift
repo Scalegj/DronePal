@@ -131,7 +131,8 @@ struct StatsView: View {
             }
         }
         .padding()
-        .background(.regularMaterial)
+        // FIX: Replaced .regularMaterial with an opaque color for better contrast.
+        .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
     
@@ -207,7 +208,8 @@ private struct StatCardView: View {
                 .foregroundStyle(color)
         }
         .padding()
-        .background(.regularMaterial)
+        // FIX: Replaced .regularMaterial with an opaque color for better contrast.
+        .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 }

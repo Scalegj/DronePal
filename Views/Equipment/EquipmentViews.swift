@@ -3,7 +3,10 @@ import SwiftUI
 /// Main list view for all drones.
 struct EquipmentListView: View {
     @EnvironmentObject var viewModel: AppViewModel
+    @Binding var selectedDrone: Drone?
     @State private var showAddDroneSheet = false
+    
+    @Environment(\.appNavigationStyle) private var navigationStyle
 
     var body: some View {
         VStack(spacing: 0) {
@@ -26,18 +29,13 @@ struct EquipmentListView: View {
                     }
                 }
             } else {
-                List {
-                    ForEach(viewModel.drones) { drone in
-                        NavigationLink(destination: DroneDetailView(drone: drone)) {
-                            EquipmentRowView(drone: drone)
-                        }
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                    }
-                    .onDelete(perform: viewModel.deleteDrone)
+                if navigationStyle == .stack {
+                    List { listViewContent }
+                        .listStyle(.plain)
+                } else {
+                    List(selection: $selectedDrone) { listViewContent }
+                        .listStyle(.plain)
                 }
-                .listStyle(.plain)
             }
         }
         .background(Color(.systemGroupedBackground))
@@ -52,24 +50,52 @@ struct EquipmentListView: View {
         .sheet(isPresented: $showAddDroneSheet) {
             AddEditDroneView(droneToEdit: nil)
         }
+        .navigationDestination(for: Drone.self) { drone in
+            DroneDetailView(drone: drone)
+        }
+    }
+    
+    private var listViewContent: some View {
+        ForEach(viewModel.drones) { drone in
+            NavigationLink(value: drone) {
+                EquipmentRowView(drone: drone)
+            }
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+        }
+        .onDelete(perform: viewModel.deleteDrone)
     }
 }
 
 /// A view to display summary equipment stats.
 struct EquipmentSummaryView: View {
     @EnvironmentObject var viewModel: AppViewModel
-    
+    @Environment(\.horizontalSizeClass) var horizontalSizeClass
+
     var body: some View {
         HStack(spacing: 16) {
             StatBox(title: "Total Drones", value: "\(viewModel.drones.count)", image: "shippingbox.fill", color: .blue)
             StatBox(title: "Most Flown", value: viewModel.mostFlownDrone()?.model ?? "N/A", image: "star.fill", color: .yellow)
+            
+            if horizontalSizeClass == .regular {
+                StatBox(title: "Total Hours", value: formatDuration(viewModel.totalFlightTime), image: "hourglass", color: .purple)
+            }
         }
         .frame(maxHeight: 100)
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.hour, .minute]
+        formatter.unitsStyle = .abbreviated
+        return formatter.string(from: duration) ?? "0h 0m"
     }
 }
 
 /// A compact card for the equipment list.
 struct EquipmentRowView: View {
+    @EnvironmentObject var viewModel: AppViewModel
     let drone: Drone
 
     var body: some View {
@@ -86,7 +112,17 @@ struct EquipmentRowView: View {
                     .font(.caption.monospaced())
             }
             .foregroundColor(.white)
+            
             Spacer()
+            
+            VStack(alignment: .trailing) {
+                Text("FLIGHT TIME")
+                    .font(.caption2.weight(.semibold))
+                    .opacity(0.8)
+                Text(formatDuration(viewModel.flightTimeByDrone[drone.id] ?? 0))
+                    .font(.subheadline.weight(.medium))
+            }
+            .foregroundColor(.white)
         }
         .padding()
         .background(
@@ -98,6 +134,13 @@ struct EquipmentRowView: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .shadow(color: .green.opacity(0.3), radius: 5, x: 0, y: 2)
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.hour, .minute]
+        formatter.unitsStyle = .abbreviated
+        return formatter.string(from: duration) ?? "0m"
     }
 }
 
@@ -145,8 +188,6 @@ struct AddEditDroneView: View {
                         if let onSave = onSave {
                             onSave(drone)
                         } else {
-                            // ** THE FIX IS HERE **
-                            // The function `saveDrone` no longer has an external parameter name for its first argument.
                             viewModel.saveDrone(drone)
                         }
                         dismiss()
@@ -160,6 +201,7 @@ struct AddEditDroneView: View {
 
 /// A detailed, read-only view of a drone's information.
 struct DroneDetailView: View {
+    @EnvironmentObject var viewModel: AppViewModel
     let drone: Drone
     @State private var showEditSheet = false
 
@@ -173,6 +215,9 @@ struct DroneDetailView: View {
                 InfoRow(label: "FAA Registration", value: drone.faaRegistration)
                 InfoRow(label: "Remote ID Serial", value: drone.remoteIdSerial)
             }
+            Section("Statistics") {
+                InfoRow(label: "Total Flight Time", value: formatDuration(viewModel.flightTimeByDrone[drone.id] ?? 0))
+            }
         }
         .navigationTitle(drone.displayName)
         .toolbar {
@@ -181,5 +226,12 @@ struct DroneDetailView: View {
         .sheet(isPresented: $showEditSheet) {
             AddEditDroneView(droneToEdit: drone)
         }
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.hour, .minute, .second]
+        formatter.unitsStyle = .full
+        return formatter.string(from: duration) ?? "0 seconds"
     }
 }

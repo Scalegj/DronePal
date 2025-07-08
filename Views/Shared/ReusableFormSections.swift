@@ -16,38 +16,81 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
 struct LegacyMapView: UIViewRepresentable {
     @Binding var drawnPoints: [CLLocationCoordinate2D]
     @Binding var userLocation: CLLocation?
+    
+    // FIX: A flag to determine if the map should allow user interaction (drawing)
+    // or just display data (read-only detail view).
+    let isInteractive: Bool
+
     func makeUIView(context: Context) -> MKMapView {
-        let mapView = MKMapView(); mapView.delegate = context.coordinator; mapView.showsUserLocation = true
-        let gestureRecognizer = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
-        mapView.addGestureRecognizer(gestureRecognizer)
+        let mapView = MKMapView()
+        mapView.delegate = context.coordinator
+        mapView.showsUserLocation = true
+        
+        // Only add the tap gesture recognizer if the map is for drawing.
+        if isInteractive {
+            let gestureRecognizer = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
+            mapView.addGestureRecognizer(gestureRecognizer)
+        }
+        
         return mapView
     }
+
     func updateUIView(_ uiView: MKMapView, context: Context) {
+        // Always clear existing overlays to prevent duplicates.
         uiView.removeOverlays(uiView.overlays)
-        if !drawnPoints.isEmpty { uiView.addOverlay(MKPolygon(coordinates: &drawnPoints, count: drawnPoints.count)) }
-        if let location = userLocation, !context.coordinator.initialLocationSet {
-            uiView.setRegion(MKCoordinateRegion(center: location.coordinate, span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)), animated: true)
+        
+        // Always draw the polygon if points exist.
+        if !drawnPoints.isEmpty {
+            let polygon = MKPolygon(coordinates: &drawnPoints, count: drawnPoints.count)
+            uiView.addOverlay(polygon)
+            
+            // If we are just viewing the map (not interacting), set the region to fit the polygon.
+            if !isInteractive {
+                let region = MKCoordinateRegion(coordinates: drawnPoints) ?? uiView.region
+                uiView.setRegion(region, animated: true)
+            }
+        }
+        
+        // Handle setting the initial location when creating a new flight area.
+        if isInteractive, let location = userLocation, !context.coordinator.initialLocationSet {
+            let region = MKCoordinateRegion(center: location.coordinate, span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01))
+            uiView.setRegion(region, animated: true)
             context.coordinator.initialLocationSet = true
         }
     }
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
     class Coordinator: NSObject, MKMapViewDelegate {
-        var parent: LegacyMapView; var initialLocationSet = false
-        init(_ parent: LegacyMapView) { self.parent = parent }
+        var parent: LegacyMapView
+        var initialLocationSet = false
+
+        init(_ parent: LegacyMapView) {
+            self.parent = parent
+        }
+
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {
             let mapView = gesture.view as! MKMapView
             let coordinate = mapView.convert(gesture.location(in: mapView), toCoordinateFrom: mapView)
             parent.drawnPoints.append(coordinate)
         }
+
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             if let polygon = overlay as? MKPolygon {
                 let renderer = MKPolygonRenderer(polygon: polygon)
-                renderer.fillColor = UIColor.blue.withAlphaComponent(0.3); renderer.strokeColor = .blue; renderer.lineWidth = 2
+                renderer.fillColor = UIColor.blue.withAlphaComponent(0.3)
+                renderer.strokeColor = .blue
+                renderer.lineWidth = 2
                 return renderer
             }
             return MKOverlayRenderer()
         }
-        func mapView(_ mapView: MKMapView, didUpdate userLocation: MKUserLocation) { parent.userLocation = userLocation.location }
+        
+        func mapView(_ mapView: MKMapView, didUpdate userLocation: MKUserLocation) {
+            parent.userLocation = userLocation.location
+        }
     }
 }
 
@@ -104,7 +147,9 @@ struct FlightAreaMapView: View {
                 if #available(iOS 17.0, *) {
                     FlightAreaMapViewContent(log: $log, locationManager: locationManager, drawnPoints: $drawnPoints, initialLocationSet: $initialLocationSet)
                 } else {
-                    LegacyMapView(drawnPoints: $drawnPoints, userLocation: $locationManager.userLocation).ignoresSafeArea(edges: .bottom)
+                    // When creating a flight area, the map should be interactive.
+                    LegacyMapView(drawnPoints: $drawnPoints, userLocation: $locationManager.userLocation, isInteractive: true)
+                        .ignoresSafeArea(edges: .bottom)
                 }
                 VStack {
                     if #available(iOS 17.0, *) {

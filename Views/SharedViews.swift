@@ -60,7 +60,8 @@ struct StatBox: View {
                 .foregroundStyle(color)
         }
         .padding()
-        .background(.regularMaterial)
+        // FIX: Replaced .regularMaterial with an opaque color for better contrast.
+        .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 20))
     }
 }

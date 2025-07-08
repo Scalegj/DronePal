@@ -4,10 +4,15 @@ import MapKit
 /// The main list view for displaying all flight logs.
 struct FlightLogListView: View {
     @EnvironmentObject var viewModel: AppViewModel
+    @Binding var selectedLog: FlightLog?
+    
+    @Environment(\.appNavigationStyle) private var navigationStyle
+    
+    @State private var showTrashSheet = false
 
     var body: some View {
         Group {
-            if viewModel.activeFlightLogs.isEmpty {
+            if viewModel.groupedFlightLogs.isEmpty {
                 if #available(iOS 17.0, *) {
                     ContentUnavailableView("No Flights Logged", systemImage: "airplane.departure", description: Text("Tap the + button to add your first flight log."))
                 } else {
@@ -19,36 +24,58 @@ struct FlightLogListView: View {
                 }
             } else {
                 List {
-                    ForEach(viewModel.activeFlightLogs) { log in
-                        NavigationLink(destination: FlightDetailView(log: log)) {
-                           FlightLogRowView(log: log)
+                    ForEach(viewModel.groupedFlightLogs) { section in
+                        Section(header: Text(section.title).font(.headline)) {
+                            ForEach(section.logs) { log in
+                                // FIX: Removed the .listRowInsets modifier to allow the row to fill the available width.
+                                NavigationLink(value: log) {
+                                   FlightLogRowView(log: log)
+                                }
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
+                                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0)) // Adjust vertical padding if needed, but keep horizontal at 0.
+                            }
+                            .onDelete { indexSet in
+                                let logsToDelete = indexSet.map { section.logs[$0] }
+                                for log in logsToDelete {
+                                    viewModel.moveLogToTrash(log: log)
+                                }
+                            }
                         }
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     }
-                    .onDelete(perform: viewModel.moveLogToTrash)
                 }
-                .listStyle(.plain)
+                .listStyle(.insetGrouped)
             }
         }
         .navigationTitle("Flight Logbook")
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
-                HStack {
+                if currentDeviceType == .iPad {
+                    Button(action: { showTrashSheet.toggle() }) {
+                        Image(systemName: "trash")
+                    }
+                } else {
                     NavigationLink(destination: TrashView()) {
                         Image(systemName: "trash")
                     }
-                    
-                    Button(action: viewModel.startNewLog) {
-                        Image(systemName: "plus.circle.fill").font(.title)
-                    }
-                    .disabled(viewModel.drones.isEmpty)
                 }
+                
+                Button(action: viewModel.startNewLog) {
+                    Image(systemName: "plus.circle.fill").font(.title)
+                }
+                .disabled(viewModel.drones.isEmpty)
+            }
+        }
+        .sheet(isPresented: $showTrashSheet) {
+            NavigationView {
+                TrashView()
             }
         }
         .sheet(isPresented: $viewModel.isLoggingFlight) {
             FlightLoggingContainerView()
+        }
+        .navigationDestination(for: FlightLog.self) { log in
+            FlightDetailView(log: log)
         }
     }
 }
@@ -227,8 +254,8 @@ struct FlightDetailView: View {
                                 .allowsHitTesting(false)
                             }
                         } else {
-                            let points = flightArea.boundary.map { $0.clLocationCoordinate2D }
-                            LegacyMapView(drawnPoints: .constant(points), userLocation: .constant(nil))
+                            var points = flightArea.boundary.map { $0.clLocationCoordinate2D }
+                            LegacyMapView(drawnPoints: .constant(points), userLocation: .constant(nil), isInteractive: false)
                                 .frame(height: 250)
                                 .clipShape(RoundedRectangle(cornerRadius: 10))
                                 .disabled(true)

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		F40D23F32E0253A300544178 /* View+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40D23F22E0253A300544178 /* View+Extensions.swift */; };
 		F448983F2DF75840003DBF3C /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = F448983E2DF75840003DBF3C /* Constants.swift */; };
 		F44898412DF75859003DBF3C /* AppLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = F44898402DF75859003DBF3C /* AppLogger.swift */; };
 		F44898432DF7586F003DBF3C /* Data+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = F44898422DF7586F003DBF3C /* Data+Extensions.swift */; };
@@ -27,9 +28,11 @@
 		F448986F2DF75B89003DBF3C /* StatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F448986E2DF75B89003DBF3C /* StatsView.swift */; };
 		F4913D612E00725200B41C3A /* LegacyContentUnavailableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4913D602E00725200B41C3A /* LegacyContentUnavailableView.swift */; };
 		F4B6448B2E01EC2F00DBC826 /* CloudKitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4B6448A2E01EC2F00DBC826 /* CloudKitService.swift */; };
+		F4B644A52E02231800DBC826 /* iPadMainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4B644A42E02231800DBC826 /* iPadMainView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		F40D23F22E0253A300544178 /* View+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "View+Extensions.swift"; sourceTree = "<group>"; };
 		F42486872DF5357300DDE273 /* DronePal.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DronePal.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F448983E2DF75840003DBF3C /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
 		F44898402DF75859003DBF3C /* AppLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogger.swift; sourceTree = "<group>"; };
@@ -51,6 +54,7 @@
 		F448986E2DF75B89003DBF3C /* StatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsView.swift; sourceTree = "<group>"; };
 		F4913D602E00725200B41C3A /* LegacyContentUnavailableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyContentUnavailableView.swift; sourceTree = "<group>"; };
 		F4B6448A2E01EC2F00DBC826 /* CloudKitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudKitService.swift; sourceTree = "<group>"; };
+		F4B644A42E02231800DBC826 /* iPadMainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iPadMainView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -121,6 +125,7 @@
 			children = (
 				F44898422DF7586F003DBF3C /* Data+Extensions.swift */,
 				F44898442DF75886003DBF3C /* Binding+Extensions.swift */,
+				F40D23F22E0253A300544178 /* View+Extensions.swift */,
 			);
 			path = Extensions;
 			sourceTree = "<group>";
@@ -165,6 +170,7 @@
 				F44898502DF7592D003DBF3C /* SharedViews.swift */,
 				F44898522DF75943003DBF3C /* ContentView.swift */,
 				F4913D602E00725200B41C3A /* LegacyContentUnavailableView.swift */,
+				F4B644A42E02231800DBC826 /* iPadMainView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -322,10 +328,12 @@
 				F44898452DF75886003DBF3C /* Binding+Extensions.swift in Sources */,
 				F44898612DF75AE3003DBF3C /* FlightLoggingViews.swift in Sources */,
 				F448986F2DF75B89003DBF3C /* StatsView.swift in Sources */,
+				F4B644A52E02231800DBC826 /* iPadMainView.swift in Sources */,
 				F44898682DF75B43003DBF3C /* ChecklistViews.swift in Sources */,
 				F44898412DF75859003DBF3C /* AppLogger.swift in Sources */,
 				F4913D612E00725200B41C3A /* LegacyContentUnavailableView.swift in Sources */,
 				F44898592DF75A7E003DBF3C /* SetupViews.swift in Sources */,
+				F40D23F32E0253A300544178 /* View+Extensions.swift in Sources */,
 				F44898432DF7586F003DBF3C /* Data+Extensions.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

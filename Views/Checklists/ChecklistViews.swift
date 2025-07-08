@@ -2,7 +2,10 @@ import SwiftUI
 
 struct ChecklistListView: View {
     @EnvironmentObject var viewModel: AppViewModel
+    @Binding var selectedChecklist: Checklist?
     @State private var showAddChecklistSheet = false
+    
+    @Environment(\.appNavigationStyle) private var navigationStyle
     
     private var sortedChecklists: [Checklist] {
         viewModel.checklists.sorted { $0.isFavorite && !$1.isFavorite }
@@ -25,16 +28,13 @@ struct ChecklistListView: View {
                     }
                 }
             } else {
-                List {
-                    ForEach(sortedChecklists) { checklist in
-                        ChecklistRowView(checklist: checklist)
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
-                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                    }
-                    .onDelete(perform: viewModel.deleteChecklist)
+                if navigationStyle == .stack {
+                    List { listViewContent }
+                        .listStyle(.plain)
+                } else {
+                    List(selection: $selectedChecklist) { listViewContent }
+                        .listStyle(.plain)
                 }
-                .listStyle(.plain)
             }
         }
         .background(Color(.systemGroupedBackground))
@@ -49,6 +49,21 @@ struct ChecklistListView: View {
         .sheet(isPresented: $showAddChecklistSheet) {
             AddEditChecklistView(checklistToEdit: nil)
         }
+        .navigationDestination(for: Checklist.self) { checklist in
+            ChecklistDetailView(checklist: checklist)
+        }
+    }
+    
+    private var listViewContent: some View {
+        ForEach(sortedChecklists) { checklist in
+            NavigationLink(value: checklist) {
+                ChecklistRowView(checklist: checklist)
+            }
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+        }
+        .onDelete(perform: viewModel.deleteChecklist)
     }
 }
 
@@ -57,8 +72,8 @@ struct ChecklistSummaryView: View {
     
     var body: some View {
         HStack(spacing: 16) {
-            // FIXED: Added the missing 'image' parameter with a relevant SF Symbol.
             StatBox(title: "Total Checklists", value: "\(viewModel.checklists.count)", image: "doc.text.magnifyingglass", color: .indigo)
+            StatBox(title: "Total Items", value: "\(viewModel.totalChecklistItems)", image: "list.bullet.rectangle", color: .blue)
         }
         .frame(maxHeight: 100)
     }
@@ -76,25 +91,22 @@ struct ChecklistRowView: View {
                 }
             }) {
                 Image(systemName: checklist.isFavorite ? "star.fill" : "star")
-                    .font(.title) // MODIFICATION: Larger icon
+                    .font(.title)
                     .foregroundColor(.yellow)
-                    .scaleEffect(checklist.isFavorite ? 1.2 : 1.0) // MODIFICATION: Animation effect
+                    .scaleEffect(checklist.isFavorite ? 1.2 : 1.0)
             }
             .buttonStyle(.plain)
 
-            NavigationLink(destination: ChecklistDetailView(checklist: checklist)) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(checklist.name)
-                            .font(.headline.bold())
-                        Text("\(checklist.items.count) items")
-                            .font(.caption)
-                            .opacity(0.8)
-                    }
-                    Spacer()
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(checklist.name)
+                        .font(.headline.bold())
+                    Text("\(checklist.items.count) items")
+                        .font(.caption)
+                        .opacity(0.8)
                 }
+                Spacer()
             }
-            .buttonStyle(.plain)
         }
         .padding(.leading, 12)
         .padding(.trailing, 20)
